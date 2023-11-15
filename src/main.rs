@@ -12,9 +12,9 @@ use clap::{arg, command, value_parser, Command};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Vertex {
-    x: u32,
-    y: u32,
-    z: u32,
+    x: i32,
+    y: i32,
+    z: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -164,7 +164,7 @@ fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
     let cos: HashMap<String, CityObject> = serde_json::from_value(j["CityObjects"].take()).unwrap();
-    let oldvertices: Vec<Vec<u32>> = serde_json::from_value(j["vertices"].take()).unwrap();
+    let oldvertices: Vec<Vec<i32>> = serde_json::from_value(j["vertices"].take()).unwrap();
     for (key, co) in &cos {
         if co.is_toplevel() {
             let mut cjf = json!({
@@ -176,13 +176,12 @@ fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
             let co2: &mut CityObject = &mut co.clone();
             let mut newvi: Vec<usize> = Vec::new();
             let mut violdnew: HashMap<usize, usize> = HashMap::new();
-            match &co.geometry {
+
+            match &mut co2.geometry {
                 Some(x) => {
-                    let mut x2: Vec<Geometry> = x.clone();
-                    for g in x2.iter_mut() {
-                        update_vi(g, &mut violdnew, &mut newvi);
+                    for mut g in x.iter_mut() {
+                        update_vi(&mut g, &mut violdnew, &mut newvi);
                     }
-                    co2.geometry = Some(x2);
                 }
                 None => (),
             }
@@ -191,16 +190,13 @@ fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
             //-- process all the children (only one-level lower)
             //-- TODO: to fix: children-of-children
             for childkey in co.get_children_keys() {
-                // cjf["CityObjects"][childkey] = serde_json::to_value(&cos.get(&childkey)).unwrap();
                 let coc = cos.get(&childkey).unwrap();
                 let coc2: &mut CityObject = &mut coc.clone();
-                match &coc.geometry {
+                match &mut coc2.geometry {
                     Some(x) => {
-                        let mut x2: Vec<Geometry> = x.clone();
-                        for g in x2.iter_mut() {
-                            update_vi(g, &mut violdnew, &mut newvi);
+                        for mut g in x.iter_mut() {
+                            update_vi(&mut g, &mut violdnew, &mut newvi);
                         }
-                        coc2.geometry = Some(x2);
                     }
                     None => (),
                 }
@@ -208,16 +204,13 @@ fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
             }
 
             //-- "slice" vertices
-            let mut newvertices: Vec<Vec<u32>> = Vec::new();
+            let mut newvertices: Vec<Vec<i32>> = Vec::new();
             for v in &newvi {
                 newvertices.push(oldvertices[*v].clone());
             }
             cjf["vertices"] = serde_json::to_value(&newvertices).unwrap();
             io::stdout()
                 .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
-            // println!("{}", serde_json::to_string(&cjf).unwrap());
-            // println!("{}", serde_json::to_string_pretty(&cjf).unwrap());
-            // break;
         }
     }
     Ok(())
@@ -226,8 +219,10 @@ fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
 fn update_vi(g: &mut Geometry, violdnew: &mut HashMap<usize, usize>, newvi: &mut Vec<usize>) {
     // println!("{:?}", g.thetype);
     if g.thetype == "MultiPoint" {
+        //TODO: MultiPoint
         let a: Vec<usize> = serde_json::from_value(g.boundaries.clone()).unwrap();
     } else if g.thetype == "MultiLineString" {
+        //TODO: MultiPoint
         let a: Vec<Vec<usize>> = serde_json::from_value(g.boundaries.clone()).unwrap();
     } else if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
         let a: Vec<Vec<Vec<usize>>> = serde_json::from_value(g.boundaries.clone()).unwrap();
@@ -274,4 +269,7 @@ fn update_vi(g: &mut Geometry, violdnew: &mut HashMap<usize, usize>, newvi: &mut
         }
         g.boundaries = serde_json::to_value(&a2).unwrap();
     }
+    //TODO: CompositeSurface
+    //TODO: MultiSolid
+    //TODO: CompositeSolid
 }
