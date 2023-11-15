@@ -1,7 +1,7 @@
 use serde_json::{json, Result, Value};
 use std::fs::File;
 use std::io::BufReader;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use serde_derive::{Deserialize, Serialize};
@@ -116,7 +116,14 @@ fn main() {
     match matches.subcommand() {
         Some(("cat", sub_matches)) => {
             // println!("'cat' was used");
-            let _re = cat_from_file(sub_matches.get_one::<PathBuf>("file"));
+            match sub_matches.get_one::<PathBuf>("file") {
+                Some(x) => {
+                    let _re = cat_from_file(x);
+                }
+                None => {
+                    let _re = cat_from_stdin();
+                }
+            }
             // println!("{:?}", re);
         }
         Some(("collect", sub_matches)) => println!(
@@ -131,8 +138,21 @@ fn main() {
     }
 }
 
-fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
-    let br = BufReader::new(File::open(file.unwrap().canonicalize().unwrap()).unwrap());
+fn cat_from_stdin() -> io::Result<()> {
+    let mut input = String::new();
+    match std::io::stdin().read_to_string(&mut input) {
+        Ok(_) => {
+            println!("You entered: {}", input);
+        }
+        Err(error) => {
+            println!("Error: {}", error);
+        }
+    }
+    Ok(())
+}
+
+fn cat_from_file(file: &PathBuf) -> io::Result<()> {
+    let br = BufReader::new(File::open(file.canonicalize().unwrap()).unwrap());
     let mut j: Value = serde_json::from_reader(br)?;
 
     if j["type"] != "CityJSON" {
