@@ -1,6 +1,7 @@
 use serde_json::{json, Result, Value};
 use std::fs::File;
 use std::io::BufReader;
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use serde_derive::{Deserialize, Serialize};
@@ -114,9 +115,9 @@ fn main() {
 
     match matches.subcommand() {
         Some(("cat", sub_matches)) => {
-            println!("'cat' was used");
-            let re = cat_from_file(sub_matches.get_one::<PathBuf>("file"));
-            println!("{:?}", re);
+            // println!("'cat' was used");
+            let _re = cat_from_file(sub_matches.get_one::<PathBuf>("file"));
+            // println!("{:?}", re);
         }
         Some(("collect", sub_matches)) => println!(
             "'collect' was used, name is: {:?}",
@@ -130,18 +131,17 @@ fn main() {
     }
 }
 
-fn cat_from_file(file: Option<&PathBuf>) -> Result<()> {
-    // println!("=={:?}", file.unwrap().canonicalize().unwrap());
-    let s1 = std::fs::read_to_string(file.unwrap()).expect("Couldn't read CityJSON file");
-
+fn cat_from_file(file: Option<&PathBuf>) -> io::Result<()> {
     let br = BufReader::new(File::open(file.unwrap().canonicalize().unwrap()).unwrap());
-
     let mut j: Value = serde_json::from_reader(br)?;
 
-    // Access parts of the data by indexing with square brackets.
-    // let cjversion: String = j["version"];
+    if j["type"] != "CityJSON" {
+        eprintln!("Input file not CityJSON v1.1 nor v2.0.");
+        std::process::exit(1);
+    }
     if j["version"] != "1.1" && j["version"] != "2.0" {
-        println!("invalid version");
+        eprintln!("Input file not CityJSON v1.1 nor v2.0.");
+        std::process::exit(1);
     }
 
     //-- 1st line: CityJSON metadata
@@ -161,23 +161,11 @@ fn cat_from_file(file: Option<&PathBuf>) -> Result<()> {
     if j["extensions"] != json!(null) {
         cj1["extensions"] = j["extensions"].clone();
     }
-    println!("{}", serde_json::to_string(&cj1).unwrap());
-    // println!("{}", serde_json::to_string_pretty(&cj1).unwrap());
-
-    //-- other lines: each CityJSONFeature
-    // let vs: Vec<Vertex> = serde_json::from_value(j["vertices"].take()).unwrap();
-    // let vs: Vec<VertexF> = j.pointer("/vertices/").unwrap().as_array().unwrap();
-    // println!("Size, innit: {}", vs.len());
-    // println!("one vertex: {:?}", vs[3]);
+    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
     let cos: HashMap<String, CityObject> = serde_json::from_value(j["CityObjects"].take()).unwrap();
-    // println!("len(cos): {:?}", cos.len());
-    // println!("geom: {:?}", cos["id-1"].geometry[0].get_lod());
-    // println!("id-1: {:?}", cos["id-1"]);
     let oldvertices: Vec<Vec<u32>> = serde_json::from_value(j["vertices"].take()).unwrap();
     for (key, co) in &cos {
-        // println!("cos: {:?}", key);
-        // println!("{:?}", co.is_toplevel());
         if co.is_toplevel() {
             let mut cjf = json!({
                     "type": "CityJSONFeature",
@@ -200,7 +188,8 @@ fn cat_from_file(file: Option<&PathBuf>) -> Result<()> {
             }
             cjf["CityObjects"][key] = serde_json::to_value(&co2).unwrap();
 
-            // println!("{:?}", co.get_children_keys());
+            //-- process all the children (only one-level lower)
+            //-- TODO: to fix: children-of-children
             for childkey in co.get_children_keys() {
                 // cjf["CityObjects"][childkey] = serde_json::to_value(&cos.get(&childkey)).unwrap();
                 let coc = cos.get(&childkey).unwrap();
@@ -215,7 +204,6 @@ fn cat_from_file(file: Option<&PathBuf>) -> Result<()> {
                     }
                     None => (),
                 }
-                // println!("here");
                 cjf["CityObjects"][childkey] = serde_json::to_value(&coc2).unwrap();
             }
 
@@ -225,7 +213,9 @@ fn cat_from_file(file: Option<&PathBuf>) -> Result<()> {
                 newvertices.push(oldvertices[*v].clone());
             }
             cjf["vertices"] = serde_json::to_value(&newvertices).unwrap();
-            println!("{}", serde_json::to_string(&cjf).unwrap());
+            io::stdout()
+                .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
+            // println!("{}", serde_json::to_string(&cjf).unwrap());
             // println!("{}", serde_json::to_string_pretty(&cjf).unwrap());
             // break;
         }
@@ -259,10 +249,6 @@ fn update_vi(g: &mut Geometry, violdnew: &mut HashMap<usize, usize>, newvi: &mut
                 }
             }
         }
-        // println!("{:?}", newvi);
-        // println!("{:?}", violdnew);
-        // println!("a: {:?}", a);
-        // println!("a2: {:?}", a2);
         g.boundaries = serde_json::to_value(&a2).unwrap();
     } else if g.thetype == "Solid" {
         let a: Vec<Vec<Vec<Vec<usize>>>> = serde_json::from_value(g.boundaries.clone()).unwrap();
