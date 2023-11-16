@@ -1,4 +1,5 @@
-use serde_json::{json, Result, Value};
+use serde_json::{json, Value};
+use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::{self, Read, Write};
@@ -9,6 +10,33 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use clap::{arg, command, value_parser, Command};
+
+#[derive(Debug)]
+enum MyError {
+    IoError(std::io::Error),
+    JsonError(serde_json::Error),
+    CityJsonError(String),
+}
+impl fmt::Display for MyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MyError::JsonError(json_error) => write!(f, "Error (JSON): {}", json_error),
+            MyError::IoError(io_error) => write!(f, "Error (io): {}", io_error),
+            MyError::CityJsonError(cjson_error) => write!(f, "Error (CityJSON): {}", cjson_error),
+        }
+    }
+}
+impl std::error::Error for MyError {}
+impl From<serde_json::Error> for MyError {
+    fn from(err: serde_json::Error) -> Self {
+        MyError::JsonError(err)
+    }
+}
+impl From<std::io::Error> for MyError {
+    fn from(err: std::io::Error) -> Self {
+        MyError::IoError(err)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Vertex {
@@ -89,7 +117,7 @@ impl Geometry {
 }
 
 fn main() {
-    let matches = command!() // requires `cargo` feature
+    let matches = command!()
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -114,35 +142,53 @@ fn main() {
         .get_matches();
 
     match matches.subcommand() {
-        Some(("cat", sub_matches)) => {
-            // println!("'cat' was used");
-            match sub_matches.get_one::<PathBuf>("file") {
-                Some(x) => {
-                    let _re = cat_from_file(x);
-                }
-                None => {
-                    let _re = cat_from_stdin();
+        Some(("cat", sub_matches)) => match sub_matches.get_one::<PathBuf>("file") {
+            Some(x) => {
+                if let Err(e) = cat_from_file(x) {
+                    eprintln!("{e}");
+                    std::process::exit(1);
                 }
             }
-            // println!("{:?}", re);
-        }
-        Some(("collect", sub_matches)) => println!(
-            "'collect' was used, name is: {:?}",
-            sub_matches
-                .get_one::<PathBuf>("file")
-                .expect("Wrong path")
-                .canonicalize()
-                .unwrap()
-        ),
+            None => {
+                if let Err(e) = cat_from_stdin() {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        },
+        Some(("collect", sub_matches)) => match sub_matches.get_one::<PathBuf>("file") {
+            Some(x) => {
+                if let Err(e) = collect_from_file(x) {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+            None => {
+                if let Err(e) = collect_from_stdin() {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        },
         _ => (),
     }
 }
 
-fn cat_from_stdin() -> io::Result<()> {
+fn collect_from_stdin() -> Result<(), MyError> {
+    Ok(())
+}
+
+fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
+    Ok(())
+}
+
+fn cat_from_stdin() -> Result<(), MyError> {
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
-            println!("You entered: {}", input);
+            let mut j: Value = serde_json::from_str(&input)?;
+            // println!("{:?}", serde_json::to_string(&j).unwrap());
+            let _ = cat(&mut j);
         }
         Err(error) => {
             println!("Error: {}", error);
@@ -151,17 +197,24 @@ fn cat_from_stdin() -> io::Result<()> {
     Ok(())
 }
 
-fn cat_from_file(file: &PathBuf) -> io::Result<()> {
-    let br = BufReader::new(File::open(file.canonicalize().unwrap()).unwrap());
+fn cat_from_file(file: &PathBuf) -> Result<(), MyError> {
+    let f = File::open(file.canonicalize()?)?;
+    let br = BufReader::new(f);
     let mut j: Value = serde_json::from_reader(br)?;
+    cat(&mut j)?;
+    Ok(())
+}
 
+fn cat(j: &mut Value) -> Result<(), MyError> {
     if j["type"] != "CityJSON" {
-        eprintln!("Input file not CityJSON v1.1 nor v2.0.");
-        std::process::exit(1);
+        return Err(MyError::CityJsonError(
+            "Input file not CityJSON.".to_string(),
+        ));
     }
     if j["version"] != "1.1" && j["version"] != "2.0" {
-        eprintln!("Input file not CityJSON v1.1 nor v2.0.");
-        std::process::exit(1);
+        return Err(MyError::CityJsonError(
+            "Input file not CityJSON v1.1 nor v2.0.".to_string(),
+        ));
     }
 
     //-- 1st line: CityJSON metadata
