@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::fmt;
 use std::fs::File;
+use std::io::BufRead;
 use std::io::BufReader;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -179,7 +180,60 @@ fn collect_from_stdin() -> Result<(), MyError> {
 }
 
 fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
+    let f = File::open(file.canonicalize()?)?;
+    let br = BufReader::new(f);
+
+    let mut j: Value = json!(null);
+    for (i, line) in br.lines().enumerate() {
+        match line {
+            Ok(content) => {
+                // println!("{}: {:?}", i, content);
+                if i == 0 {
+                    j = serde_json::from_str(&content)?;
+                } else {
+                    let mut cjf = serde_json::from_str(&content)?;
+                    collect_add_one_cjf(&mut j, &mut cjf);
+                }
+            }
+            Err(error) => eprintln!("Error reading line: {}", error),
+        }
+    }
+    println!("{}", serde_json::to_string_pretty(&j)?);
+
+    // let mut j: Value = serde_json::from_reader(br)?;
+    // cat(&mut j)?;
     Ok(())
+}
+
+fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value) {
+    for (_key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
+        // println!("{:?}", key);
+        // j["CityObjects"][key] = value.clone();
+        // value["type"] = "Potatoe".into();
+        let x = co["geometry"].as_array_mut();
+        if x.is_some() {
+            for g in x.unwrap() {
+                // println!("{:?}", g["type"]);
+                // g["type"] = "Orange".into();
+                if g["type"] == "Solid" {
+                    for shell in g["boundaries"].as_array_mut().unwrap() {
+                        for surface in shell.as_array_mut().unwrap() {
+                            for ring in surface.as_array_mut().unwrap() {
+                                for mut p in ring.as_array_mut().unwrap() {
+                                    *p = Value::Number((567 as u64).into());
+                                    // println!("{:?}", p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (key, value) in cjf["CityObjects"].as_object_mut().unwrap() {
+        // println!("{:?}", key);
+        j["CityObjects"][key] = value.clone();
+    }
 }
 
 fn cat_from_stdin() -> Result<(), MyError> {
