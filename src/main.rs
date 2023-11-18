@@ -184,6 +184,7 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
     let br = BufReader::new(f);
 
     let mut j: Value = json!(null);
+    let mut allvertices: Vec<Vec<i32>> = Vec::new();
     for (i, line) in br.lines().enumerate() {
         match line {
             Ok(content) => {
@@ -192,20 +193,21 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
                     j = serde_json::from_str(&content)?;
                 } else {
                     let mut cjf = serde_json::from_str(&content)?;
-                    collect_add_one_cjf(&mut j, &mut cjf);
+                    collect_add_one_cjf(&mut j, &mut cjf, &mut allvertices);
                 }
             }
             Err(error) => eprintln!("Error reading line: {}", error),
         }
     }
-    println!("{}", serde_json::to_string_pretty(&j)?);
-
-    // let mut j: Value = serde_json::from_reader(br)?;
-    // cat(&mut j)?;
+    j["vertices"] = serde_json::to_value(&allvertices).unwrap();
+    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&j).unwrap()).as_bytes())?;
+    // println!("{}", serde_json::to_string_pretty(&j)?);
     Ok(())
 }
 
-fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value) {
+fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value, allvertices: &mut Vec<Vec<i32>>) {
+    // let offset = j["vertices"].as_array().unwrap().len();
+    let offset = allvertices.len();
     for (_key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
         // println!("{:?}", key);
         // j["CityObjects"][key] = value.clone();
@@ -213,15 +215,13 @@ fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value) {
         let x = co["geometry"].as_array_mut();
         if x.is_some() {
             for g in x.unwrap() {
-                // println!("{:?}", g["type"]);
-                // g["type"] = "Orange".into();
                 if g["type"] == "Solid" {
                     for shell in g["boundaries"].as_array_mut().unwrap() {
                         for surface in shell.as_array_mut().unwrap() {
                             for ring in surface.as_array_mut().unwrap() {
-                                for mut p in ring.as_array_mut().unwrap() {
-                                    *p = Value::Number((567 as u64).into());
-                                    // println!("{:?}", p);
+                                for p in ring.as_array_mut().unwrap() {
+                                    let p1: i64 = p.as_i64().unwrap();
+                                    *p = Value::Number((p1 + offset as i64).into());
                                 }
                             }
                         }
@@ -230,10 +230,13 @@ fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value) {
             }
         }
     }
+    //-- copy the offsetted CO
     for (key, value) in cjf["CityObjects"].as_object_mut().unwrap() {
-        // println!("{:?}", key);
         j["CityObjects"][key] = value.clone();
     }
+    //-- add the new vertices
+    let mut vertices: Vec<Vec<i32>> = serde_json::from_value(cjf["vertices"].take()).unwrap();
+    allvertices.append(&mut vertices);
 }
 
 fn cat_from_stdin() -> Result<(), MyError> {
@@ -241,7 +244,6 @@ fn cat_from_stdin() -> Result<(), MyError> {
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
             let mut j: Value = serde_json::from_str(&input)?;
-            // println!("{:?}", serde_json::to_string(&j).unwrap());
             let _ = cat(&mut j);
         }
         Err(error) => {
