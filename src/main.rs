@@ -176,13 +176,27 @@ fn main() {
 }
 
 fn collect_from_stdin() -> Result<(), MyError> {
+    let stdin = std::io::stdin();
+
+    let mut j: Value = json!(null);
+    let mut allvertices: Vec<Vec<i32>> = Vec::new();
+    for (i, line) in stdin.lock().lines().enumerate() {
+        let l = line.unwrap();
+        if i == 0 {
+            j = serde_json::from_str(&l)?;
+        } else {
+            let mut cjf = serde_json::from_str(&l)?;
+            collect_add_one_cjf(&mut j, &mut cjf, &mut allvertices);
+        }
+    }
+    j["vertices"] = serde_json::to_value(&allvertices).unwrap();
+    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&j).unwrap()).as_bytes())?;
     Ok(())
 }
 
 fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let br = BufReader::new(f);
-
     let mut j: Value = json!(null);
     let mut allvertices: Vec<Vec<i32>> = Vec::new();
     for (i, line) in br.lines().enumerate() {
@@ -215,7 +229,17 @@ fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value, allvertices: &mut Vec<Vec
         let x = co["geometry"].as_array_mut();
         if x.is_some() {
             for g in x.unwrap() {
-                if g["type"] == "Solid" {
+                // TODO : add other Geometric primitives
+                if g["type"] == "MultiSurface" || g["type"] == "CompositeSurface" {
+                    for surface in g["boundaries"].as_array_mut().unwrap() {
+                        for ring in surface.as_array_mut().unwrap() {
+                            for p in ring.as_array_mut().unwrap() {
+                                let p1: i64 = p.as_i64().unwrap();
+                                *p = Value::Number((p1 + offset as i64).into());
+                            }
+                        }
+                    }
+                } else if g["type"] == "Solid" {
                     for shell in g["boundaries"].as_array_mut().unwrap() {
                         for surface in shell.as_array_mut().unwrap() {
                             for ring in surface.as_array_mut().unwrap() {
@@ -317,7 +341,7 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             cjf["CityObjects"][key] = serde_json::to_value(&co2).unwrap();
 
             //-- process all the children (only one-level lower)
-            //-- TODO: to fix: children-of-children
+            //-- TODO: to fix: children-of-children?
             for childkey in co.get_children_keys() {
                 let coc = cos.get(&childkey).unwrap();
                 let coc2: &mut CityObject = &mut coc.clone();
