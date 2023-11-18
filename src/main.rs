@@ -88,18 +88,6 @@ impl CityObject {
         }
         re
     }
-    fn get_geometries(&self) -> Vec<Geometry> {
-        let mut re: Vec<Geometry> = Vec::new();
-        match &self.geometry {
-            Some(x) => {
-                for each in x {
-                    re.push(each.clone());
-                }
-            }
-            None => (),
-        }
-        re
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -109,12 +97,6 @@ struct Geometry {
     lod: String,
     boundaries: Value,
     semantics: Option<Value>,
-}
-
-impl Geometry {
-    fn get_lod(&self) -> String {
-        format!("{:.1}", self.lod)
-    }
 }
 
 fn main() {
@@ -220,12 +202,8 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
 }
 
 fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value, allvertices: &mut Vec<Vec<i32>>) {
-    // let offset = j["vertices"].as_array().unwrap().len();
     let offset = allvertices.len();
     for (_key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
-        // println!("{:?}", key);
-        // j["CityObjects"][key] = value.clone();
-        // value["type"] = "Potatoe".into();
         let x = co["geometry"].as_array_mut();
         if x.is_some() {
             for g in x.unwrap() {
@@ -333,7 +311,7 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             match &mut co2.geometry {
                 Some(x) => {
                     for mut g in x.iter_mut() {
-                        update_vi(&mut g, &mut violdnew, &mut newvi);
+                        update_geometry_vi(&mut g, &mut violdnew, &mut newvi);
                     }
                 }
                 None => (),
@@ -348,7 +326,7 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
                 match &mut coc2.geometry {
                     Some(x) => {
                         for mut g in x.iter_mut() {
-                            update_vi(&mut g, &mut violdnew, &mut newvi);
+                            update_geometry_vi(&mut g, &mut violdnew, &mut newvi);
                         }
                     }
                     None => (),
@@ -369,7 +347,11 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
     Ok(())
 }
 
-fn update_vi(g: &mut Geometry, violdnew: &mut HashMap<usize, usize>, newvi: &mut Vec<usize>) {
+fn update_geometry_vi(
+    g: &mut Geometry,
+    violdnew: &mut HashMap<usize, usize>,
+    newvi: &mut Vec<usize>,
+) {
     // println!("{:?}", g.thetype);
     if g.thetype == "MultiPoint" {
         //TODO: MultiPoint
