@@ -91,6 +91,14 @@ impl CityObject {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+struct Material {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    values: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Geometry {
     #[serde(rename = "type")]
     thetype: String,
@@ -99,7 +107,7 @@ struct Geometry {
     #[serde(skip_serializing_if = "Option::is_none")]
     semantics: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    material: Option<Value>,
+    material: Option<HashMap<String, Material>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     texture: Option<Value>,
 }
@@ -371,34 +379,46 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
 
 fn update_material(g: &mut Geometry, m_oldnew: &mut HashMap<usize, usize>) {
     match &mut g.material {
-        // let a: Vec<Vec<usize>> = serde_json::from_value(g.boundaries.clone()).unwrap();
-        Some(_x) => {
-            let mut mats: HashMap<String, Value> =
-                serde_json::from_value(g.material.take().into()).unwrap();
-            for (_key, mat) in &mut mats {
+        Some(x) => {
+            for (_key, mat) in &mut *x {
+                if mat.value.is_some() {
+                    let thevalue: usize = mat.value.unwrap();
+                    let r = m_oldnew.get(&thevalue);
+                    if r.is_none() {
+                        let l = m_oldnew.len();
+                        m_oldnew.insert(thevalue, l);
+                        mat.value = Some(l);
+                    } else {
+                        let r2 = r.unwrap();
+                        mat.value = Some(*r2);
+                    }
+                    continue;
+                }
                 if g.thetype == "Solid" {
-                    let a: Vec<Vec<Option<usize>>> =
-                        serde_json::from_value(mat["values"].take()).unwrap();
-                    let mut a2 = a.clone();
-                    for (i, x) in a.iter().enumerate() {
-                        for (j, y) in x.iter().enumerate() {
-                            if y.is_some() {
-                                let y2 = m_oldnew.get(&y.unwrap());
-                                if y2.is_none() {
-                                    let l = m_oldnew.len();
-                                    m_oldnew.insert(y.unwrap(), l);
-                                    a2[i][j] = Some(l);
-                                } else {
-                                    let y2 = y2.unwrap();
-                                    a2[i][j] = Some(*y2);
+                    if mat.values.is_some() {
+                        let a: Vec<Vec<Option<usize>>> =
+                            serde_json::from_value(mat.values.take().into()).unwrap();
+                        let mut a2 = a.clone();
+                        for (i, x) in a.iter().enumerate() {
+                            for (j, y) in x.iter().enumerate() {
+                                if y.is_some() {
+                                    let y2 = m_oldnew.get(&y.unwrap());
+                                    if y2.is_none() {
+                                        let l = m_oldnew.len();
+                                        m_oldnew.insert(y.unwrap(), l);
+                                        a2[i][j] = Some(l);
+                                    } else {
+                                        let y2 = y2.unwrap();
+                                        a2[i][j] = Some(*y2);
+                                    }
                                 }
                             }
                         }
+                        mat.values = Some(serde_json::to_value(&a2).unwrap());
                     }
-                    mat["values"] = serde_json::to_value(&a2).unwrap();
                 }
             }
-            g.material = Some(serde_json::to_value(&mats).unwrap());
+            g.material = Some(x.clone());
         }
         None => (),
     }
