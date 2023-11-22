@@ -76,18 +76,18 @@ impl CityObject {
             None => return true,
         }
     }
-    fn get_children_keys(&self) -> Vec<String> {
-        let mut re: Vec<String> = Vec::new();
-        match &self.children {
-            Some(x) => {
-                for each in x {
-                    re.push(each.to_string());
-                }
-            }
-            None => (),
-        }
-        re
-    }
+    // fn get_children_keys(&self) -> Vec<String> {
+    //     let mut re: Vec<String> = Vec::new();
+    //     match &self.children {
+    //         Some(x) => {
+    //             for each in x {
+    //                 re.push(each.to_string());
+    //             }
+    //         }
+    //         None => (),
+    //     }
+    //     re
+    // }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -335,6 +335,8 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
         }
         None => (),
     }
+
+    //-- TODO: handling "default-theme-texture": "myDefaultTheme1"?
 
     let cos: HashMap<String, CityObject> = serde_json::from_value(j["CityObjects"].take()).unwrap();
     let g_old_vertices: Vec<Vec<i32>> = serde_json::from_value(j["vertices"].take()).unwrap();
