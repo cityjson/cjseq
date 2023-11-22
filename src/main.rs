@@ -76,18 +76,6 @@ impl CityObject {
             None => return true,
         }
     }
-    // fn get_children_keys(&self) -> Vec<String> {
-    //     let mut re: Vec<String> = Vec::new();
-    //     match &self.children {
-    //         Some(x) => {
-    //             for each in x {
-    //                 re.push(each.to_string());
-    //             }
-    //         }
-    //         None => (),
-    //     }
-    //     re
-    // }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -102,6 +90,34 @@ struct Material {
 struct Texture {
     #[serde(skip_serializing_if = "Option::is_none")]
     values: Option<Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Appearance {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    materials: Option<Vec<Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    textures: Option<Vec<Value>>,
+    #[serde(rename = "vertices-texture")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vertices_texture: Option<Vec<Vec<f64>>>,
+    #[serde(rename = "default-theme-texture")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_theme_texture: Option<String>,
+    #[serde(rename = "default-theme-material")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_theme_material: Option<String>,
+}
+impl Appearance {
+    fn new() -> Self {
+        Appearance {
+            materials: None,
+            textures: None,
+            vertices_texture: None,
+            default_theme_texture: None,
+            default_theme_material: None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -313,25 +329,12 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
     }
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
-    let mut allmats: Vec<Value> = Vec::new();
-    match j.pointer_mut("/appearance/materials") {
+    let mut allappearance: Option<Appearance> = None;
+    match j.pointer_mut("/appearance") {
         Some(x) => {
-            allmats = serde_json::from_value(x.take()).unwrap();
-        }
-        None => (),
-    }
-
-    let mut alltexs: Vec<Value> = Vec::new();
-    match j.pointer_mut("/appearance/textures") {
-        Some(x) => {
-            alltexs = serde_json::from_value(x.take()).unwrap();
-        }
-        None => (),
-    }
-    let mut t_old_vertices: Vec<Vec<f64>> = Vec::new();
-    match j.pointer_mut("/appearance/vertices-texture") {
-        Some(x) => {
-            t_old_vertices = serde_json::from_value(x.take()).unwrap();
+            allappearance = serde_json::from_value(x.take()).unwrap();
+            // println!("{:?}", allappearance);
+            // std::process::exit(1);
         }
         None => (),
     }
@@ -396,43 +399,83 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             cjf["vertices"] = serde_json::to_value(&g_new_vertices).unwrap();
 
             //-- "slice" materials
-            match j.pointer_mut("/appearance/materials") {
-                Some(_x) => {
+            if allappearance.is_some() {
+                let aa: &Appearance = allappearance.as_ref().unwrap();
+                let mut acjf: Appearance = Appearance::new();
+                acjf.default_theme_material = aa.default_theme_material.clone();
+                acjf.default_theme_texture = aa.default_theme_texture.clone();
+                if aa.materials.is_some() {
+                    let am = aa.materials.as_ref().unwrap();
                     let mut mats2: Vec<Value> = Vec::new();
                     mats2.resize(m_oldnew.len(), json!(null));
                     for (old, new) in &m_oldnew {
-                        mats2[*new] = allmats[*old].clone();
+                        mats2[*new] = am[*old].clone();
                     }
-                    cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
+                    acjf.materials = Some(mats2);
+                    // cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
                 }
-                None => (),
-            }
-
-            //-- "slice" textures
-            match j.pointer_mut("/appearance/textures") {
-                Some(_x) => {
+                if aa.textures.is_some() {
+                    let at = aa.textures.as_ref().unwrap();
                     let mut texs2: Vec<Value> = Vec::new();
                     texs2.resize(t_oldnew.len(), json!(null));
                     for (old, new) in &t_oldnew {
-                        texs2[*new] = alltexs[*old].clone();
+                        texs2[*new] = at[*old].clone();
                     }
-                    cjf["appearance"]["textures"] = serde_json::to_value(&texs2).unwrap();
+                    acjf.textures = Some(texs2);
+                    // cjf["appearance"]["textures"] = serde_json::to_value(&texs2).unwrap();
                 }
-                None => (),
-            }
-            //-- "slice" vertices-texture
-            match j.pointer_mut("/appearance/vertices-texture") {
-                Some(_x) => {
+                if aa.vertices_texture.is_some() {
+                    let atv = aa.vertices_texture.as_ref().unwrap();
                     let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
                     t_new_vertices.resize(t_v_oldnew.len(), vec![]);
                     for (old, new) in &t_v_oldnew {
-                        t_new_vertices[*new] = t_old_vertices[*old].clone();
+                        t_new_vertices[*new] = atv[*old].clone();
                     }
-                    cjf["appearance"]["vertices-texture"] =
-                        serde_json::to_value(&t_new_vertices).unwrap();
+                    acjf.vertices_texture = Some(t_new_vertices);
+                    // cjf["appearance"]["vertices-texture"] =
+                    // serde_json::to_value(&t_new_vertices).unwrap();
                 }
-                None => (),
+                println!("{:?}", aa);
+                println!("{:?}", acjf);
+                cjf["appearance"] = serde_json::to_value(&acjf).unwrap();
             }
+            // match j.pointer_mut("/appearance/materials") {
+            //     Some(_x) => {
+            //         let mut mats2: Vec<Value> = Vec::new();
+            //         mats2.resize(m_oldnew.len(), json!(null));
+            //         for (old, new) in &m_oldnew {
+            //             mats2[*new] = allmats[*old].clone();
+            //         }
+            //         cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
+            //     }
+            //     None => (),
+            // }
+
+            // //-- "slice" textures
+            // match j.pointer_mut("/appearance/textures") {
+            //     Some(_x) => {
+            //         let mut texs2: Vec<Value> = Vec::new();
+            //         texs2.resize(t_oldnew.len(), json!(null));
+            //         for (old, new) in &t_oldnew {
+            //             texs2[*new] = alltexs[*old].clone();
+            //         }
+            //         cjf["appearance"]["textures"] = serde_json::to_value(&texs2).unwrap();
+            //     }
+            //     None => (),
+            // }
+            // //-- "slice" vertices-texture
+            // match j.pointer_mut("/appearance/vertices-texture") {
+            //     Some(_x) => {
+            //         let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
+            //         t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+            //         for (old, new) in &t_v_oldnew {
+            //             t_new_vertices[*new] = t_old_vertices[*old].clone();
+            //         }
+            //         cjf["appearance"]["vertices-texture"] =
+            //             serde_json::to_value(&t_new_vertices).unwrap();
+            //     }
+            //     None => (),
+            // }
 
             //-- write to stdout
             io::stdout()
