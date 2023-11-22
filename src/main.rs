@@ -99,6 +99,12 @@ struct Material {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+struct Texture {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    values: Option<Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Geometry {
     #[serde(rename = "type")]
     thetype: String,
@@ -109,7 +115,7 @@ struct Geometry {
     #[serde(skip_serializing_if = "Option::is_none")]
     material: Option<HashMap<String, Material>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    texture: Option<Value>,
+    texture: Option<HashMap<String, Texture>>,
 }
 
 fn main() {
@@ -307,6 +313,29 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
     }
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
+    let mut allmats: Vec<Value> = Vec::new();
+    match j.pointer_mut("/appearance/materials") {
+        Some(x) => {
+            allmats = serde_json::from_value(x.take()).unwrap();
+        }
+        None => (),
+    }
+
+    let mut alltexs: Vec<Value> = Vec::new();
+    match j.pointer_mut("/appearance/textures") {
+        Some(x) => {
+            alltexs = serde_json::from_value(x.take()).unwrap();
+        }
+        None => (),
+    }
+    let mut t_old_vertices: Vec<Vec<f64>> = Vec::new();
+    match j.pointer_mut("/appearance/vertices-texture") {
+        Some(x) => {
+            t_old_vertices = serde_json::from_value(x.take()).unwrap();
+        }
+        None => (),
+    }
+
     let cos: HashMap<String, CityObject> = serde_json::from_value(j["CityObjects"].take()).unwrap();
     let g_old_vertices: Vec<Vec<i32>> = serde_json::from_value(j["vertices"].take()).unwrap();
     for (key, co) in &cos {
@@ -322,35 +351,40 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
             let mut g_new_vi: Vec<usize> = Vec::new();
             let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
             match &mut co2.geometry {
                 Some(x) => {
                     for mut g in x.iter_mut() {
                         //-- geometry/boundaries
-                        update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
+                        cat_update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
                         //-- geometry/material
-                        update_material(&mut g, &mut m_oldnew);
+                        cat_update_material(&mut g, &mut m_oldnew);
                         // println!("== {:?}", m_oldnew);
+                        //-- geometry/texture
+                        cat_update_texture(&mut g, &mut t_oldnew, &mut t_v_oldnew);
                     }
                 }
                 None => (),
             }
             cjf["CityObjects"][key] = serde_json::to_value(&co2).unwrap();
 
-            //-- process all the children (only one-level lower)
             //-- TODO: to fix: children-of-children?
-            for childkey in co.get_children_keys() {
-                let coc = cos.get(&childkey).unwrap();
-                let coc2: &mut CityObject = &mut coc.clone();
-                match &mut coc2.geometry {
-                    Some(x) => {
-                        for mut g in x.iter_mut() {
-                            update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
-                        }
-                    }
-                    None => (),
-                }
-                cjf["CityObjects"][childkey] = serde_json::to_value(&coc2).unwrap();
-            }
+            //-- process all the children (only one-level lower)
+            // for childkey in co.get_children_keys() {
+            //     let coc = cos.get(&childkey).unwrap();
+            //     let coc2: &mut CityObject = &mut coc.clone();
+            //     match &mut coc2.geometry {
+            //         Some(x) => {
+            //             for mut g in x.iter_mut() {
+            //                 cat_update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
+            //                 // TODO: material + children
+            //             }
+            //         }
+            //         None => (),
+            //     }
+            //     cjf["CityObjects"][childkey] = serde_json::to_value(&coc2).unwrap();
+            // }
 
             //-- "slice" geometry vertices
             let mut g_new_vertices: Vec<Vec<i32>> = Vec::new();
@@ -359,15 +393,44 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             }
             cjf["vertices"] = serde_json::to_value(&g_new_vertices).unwrap();
 
-            //-- "slice" material vertices
-            let mats: Vec<Value> =
-                serde_json::from_value(j["appearance"]["materials"].take()).unwrap();
-            let mut mats2: Vec<Value> = Vec::new();
-            mats2.resize(m_oldnew.len(), json!(null));
-            for (old, new) in &m_oldnew {
-                mats2[*new] = mats[*old].clone();
+            //-- "slice" materials
+            match j.pointer_mut("/appearance/materials") {
+                Some(_x) => {
+                    let mut mats2: Vec<Value> = Vec::new();
+                    mats2.resize(m_oldnew.len(), json!(null));
+                    for (old, new) in &m_oldnew {
+                        mats2[*new] = allmats[*old].clone();
+                    }
+                    cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
+                }
+                None => (),
             }
-            cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
+
+            //-- "slice" textures
+            match j.pointer_mut("/appearance/textures") {
+                Some(_x) => {
+                    let mut texs2: Vec<Value> = Vec::new();
+                    texs2.resize(t_oldnew.len(), json!(null));
+                    for (old, new) in &t_oldnew {
+                        texs2[*new] = alltexs[*old].clone();
+                    }
+                    cjf["appearance"]["textures"] = serde_json::to_value(&texs2).unwrap();
+                }
+                None => (),
+            }
+            //-- "slice" vertices-texture
+            match j.pointer_mut("/appearance/vertices-texture") {
+                Some(_x) => {
+                    let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
+                    t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+                    for (old, new) in &t_v_oldnew {
+                        t_new_vertices[*new] = t_old_vertices[*old].clone();
+                    }
+                    cjf["appearance"]["vertices-texture"] =
+                        serde_json::to_value(&t_new_vertices).unwrap();
+                }
+                None => (),
+            }
 
             //-- write to stdout
             io::stdout()
@@ -377,7 +440,57 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
     Ok(())
 }
 
-fn update_material(g: &mut Geometry, m_oldnew: &mut HashMap<usize, usize>) {
+fn cat_update_texture(
+    g: &mut Geometry,
+    t_oldnew: &mut HashMap<usize, usize>,
+    t_v_oldnew: &mut HashMap<usize, usize>,
+) {
+    match &mut g.texture {
+        Some(x) => {
+            for (_key, tex) in &mut *x {
+                if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
+                    let a: Vec<Vec<Vec<Option<usize>>>> =
+                        serde_json::from_value(tex.values.take().into()).unwrap();
+                    let mut a2 = a.clone();
+                    for (i, x) in a.iter().enumerate() {
+                        for (j, y) in x.iter().enumerate() {
+                            for (k, z) in y.iter().enumerate() {
+                                if z.is_some() {
+                                    let thevalue: usize = z.unwrap();
+                                    if k == 0 {
+                                        let y2 = t_oldnew.get(&thevalue);
+                                        if y2.is_none() {
+                                            let l = t_oldnew.len();
+                                            t_oldnew.insert(thevalue, l);
+                                            a2[i][j][k] = Some(l);
+                                        } else {
+                                            let y2 = y2.unwrap();
+                                            a2[i][j][k] = Some(*y2);
+                                        }
+                                    } else {
+                                        let y2 = t_v_oldnew.get(&thevalue);
+                                        if y2.is_none() {
+                                            let l = t_v_oldnew.len();
+                                            t_v_oldnew.insert(thevalue, l);
+                                            a2[i][j][k] = Some(l);
+                                        } else {
+                                            let y2 = y2.unwrap();
+                                            a2[i][j][k] = Some(*y2);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    tex.values = Some(serde_json::to_value(&a2).unwrap());
+                }
+            }
+        }
+        None => (),
+    }
+}
+
+fn cat_update_material(g: &mut Geometry, m_oldnew: &mut HashMap<usize, usize>) {
     match &mut g.material {
         Some(x) => {
             for (_key, mat) in &mut *x {
@@ -470,7 +583,7 @@ fn update_material(g: &mut Geometry, m_oldnew: &mut HashMap<usize, usize>) {
     }
 }
 
-fn update_geometry_vi(
+fn cat_update_geometry_vi(
     g: &mut Geometry,
     violdnew: &mut HashMap<usize, usize>,
     newvi: &mut Vec<usize>,
