@@ -475,15 +475,44 @@ fn update_geometry_vi(
     violdnew: &mut HashMap<usize, usize>,
     newvi: &mut Vec<usize>,
 ) {
-    // println!("{:?}", g.thetype);
+    // TODO: GeometryInstance?
     if g.thetype == "MultiPoint" {
-        //TODO: MultiPoint
         let a: Vec<usize> = serde_json::from_value(g.boundaries.clone()).unwrap();
+        let mut a2 = a.clone();
+        for (i, x) in a.iter().enumerate() {
+            let kk = violdnew.get(&x);
+            if kk.is_none() {
+                let l = newvi.len();
+                violdnew.insert(*x, l);
+                newvi.push(*x);
+                a2[i] = l;
+            } else {
+                let kk = kk.unwrap();
+                a2[i] = *kk;
+            }
+        }
+        g.boundaries = serde_json::to_value(&a2).unwrap();
     } else if g.thetype == "MultiLineString" {
-        //TODO: MultiPoint
-        let a: Vec<Vec<usize>> = serde_json::from_value(g.boundaries.clone()).unwrap();
+        let a: Vec<Vec<usize>> = serde_json::from_value(g.boundaries.take()).unwrap();
+        let mut a2 = a.clone();
+        for (i, x) in a.iter().enumerate() {
+            for (j, y) in x.iter().enumerate() {
+                // r.push(z);
+                let kk = violdnew.get(&y);
+                if kk.is_none() {
+                    let l = newvi.len();
+                    violdnew.insert(*y, l);
+                    newvi.push(*y);
+                    a2[i][j] = l;
+                } else {
+                    let kk = kk.unwrap();
+                    a2[i][j] = *kk;
+                }
+            }
+        }
+        g.boundaries = serde_json::to_value(&a2).unwrap();
     } else if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
-        let a: Vec<Vec<Vec<usize>>> = serde_json::from_value(g.boundaries.clone()).unwrap();
+        let a: Vec<Vec<Vec<usize>>> = serde_json::from_value(g.boundaries.take()).unwrap();
         let mut a2 = a.clone();
         for (i, x) in a.iter().enumerate() {
             for (j, y) in x.iter().enumerate() {
@@ -504,7 +533,7 @@ fn update_geometry_vi(
         }
         g.boundaries = serde_json::to_value(&a2).unwrap();
     } else if g.thetype == "Solid" {
-        let a: Vec<Vec<Vec<Vec<usize>>>> = serde_json::from_value(g.boundaries.clone()).unwrap();
+        let a: Vec<Vec<Vec<Vec<usize>>>> = serde_json::from_value(g.boundaries.take()).unwrap();
         let mut a2 = a.clone();
         for (i, x) in a.iter().enumerate() {
             for (j, y) in x.iter().enumerate() {
@@ -526,8 +555,30 @@ fn update_geometry_vi(
             }
         }
         g.boundaries = serde_json::to_value(&a2).unwrap();
+    } else if g.thetype == "MultiSolid" || g.thetype == "CompositeSolid" {
+        let a: Vec<Vec<Vec<Vec<Vec<usize>>>>> =
+            serde_json::from_value(g.boundaries.take()).unwrap();
+        let mut a2 = a.clone();
+        for (i, x) in a.iter().enumerate() {
+            for (j, y) in x.iter().enumerate() {
+                for (k, z) in y.iter().enumerate() {
+                    for (l, zz) in z.iter().enumerate() {
+                        for (m, zzz) in zz.iter().enumerate() {
+                            let kk = violdnew.get(&zzz);
+                            if kk.is_none() {
+                                let length = newvi.len();
+                                violdnew.insert(*zzz, length);
+                                newvi.push(*zzz);
+                                a2[i][j][k][l][m] = length;
+                            } else {
+                                let kk = kk.unwrap();
+                                a2[i][j][k][l][m] = *kk;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        g.boundaries = serde_json::to_value(&a2).unwrap();
     }
-    //TODO: CompositeSurface
-    //TODO: MultiSolid
-    //TODO: CompositeSolid
 }
