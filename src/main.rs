@@ -39,11 +39,72 @@ impl From<std::io::Error> for MyError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Vertex {
-    x: i64,
-    y: i64,
-    z: i64,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct CityJSON {
+    #[serde(rename = "type")]
+    thetype: String,
+    version: String,
+    transform: Value,
+    #[serde(rename = "CityObjects")]
+    city_objects: HashMap<String, CityObject>,
+    vertices: Vec<Vec<i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    appearance: Option<Appearance>,
+    #[serde(rename = "geometry-templates")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    geometry_templates: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extensions: Option<Value>,
+    #[serde(flatten)]
+    other: serde_json::Value,
+}
+impl CityJSON {
+    fn get_empty_copy(&self) -> Self {
+        let co: HashMap<String, CityObject> = HashMap::new();
+        let v: Vec<Vec<i64>> = Vec::new();
+        CityJSON {
+            thetype: self.thetype.clone(),
+            version: self.version.clone(),
+            transform: self.transform.clone(),
+            metadata: self.metadata.clone(),
+            city_objects: co,
+            vertices: v,
+            appearance: None,
+            geometry_templates: self.geometry_templates.clone(),
+            other: self.other.clone(),
+            extensions: self.extensions.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct CityJSONFeature {
+    #[serde(rename = "type")]
+    thetype: String,
+    id: String,
+    #[serde(rename = "CityObjects")]
+    city_objects: HashMap<String, CityObject>,
+    vertices: Vec<Vec<i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    appearance: Option<Appearance>,
+}
+impl CityJSONFeature {
+    fn new() -> Self {
+        let co: HashMap<String, CityObject> = HashMap::new();
+        let v: Vec<Vec<i64>> = Vec::new();
+        CityJSONFeature {
+            thetype: "CityJSONFeature".to_string(),
+            id: "".to_string(),
+            city_objects: co,
+            vertices: v,
+            appearance: None,
+        }
+    }
+    fn add_co(&mut self, id: String, co: CityObject) {
+        self.city_objects.insert(id, co);
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -61,6 +122,8 @@ struct CityObject {
     children: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parents: Option<Vec<String>>,
+    #[serde(flatten)]
+    other: serde_json::Value,
 }
 
 impl CityObject {
@@ -76,6 +139,27 @@ impl CityObject {
             None => return true,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Geometry {
+    #[serde(rename = "type")]
+    thetype: String,
+    lod: String,
+    boundaries: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    semantics: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    material: Option<HashMap<String, Material>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    texture: Option<HashMap<String, Texture>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Vertex {
+    x: i64,
+    y: i64,
+    z: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -136,20 +220,6 @@ impl Appearance {
         };
         re
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Geometry {
-    #[serde(rename = "type")]
-    thetype: String,
-    lod: String,
-    boundaries: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    semantics: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    material: Option<HashMap<String, Material>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    texture: Option<HashMap<String, Texture>>,
 }
 
 fn main() {
@@ -412,11 +482,87 @@ fn cat_from_stdin() -> Result<(), MyError> {
     Ok(())
 }
 
+// fn test(file: &PathBuf) -> Result<(), MyError> {
+//     let f = File::open(file.canonicalize()?)?;
+//     let br = BufReader::new(f);
+//     let mut cjj: CityJSON = serde_json::from_reader(br)?;
+//     let vs = &mut cjj.vertices;
+//     vs.clear();
+//     vs.push(vec![0, 2, 99]);
+//     println!("{}", serde_json::to_string(&cjj).unwrap());
+//     Ok(())
+// }
+
 fn cat_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let br = BufReader::new(f);
-    let mut j: Value = serde_json::from_reader(br)?;
-    cat(&mut j)?;
+
+    let cjj: CityJSON = serde_json::from_reader(br)?;
+    cat2(&cjj)?;
+    //     let vs = &mut cjj.vertices;
+    //     vs.clear();
+    //     vs.push(vec![0, 2, 99]);
+    // cat(&mut j)?;
+    Ok(())
+}
+
+fn cat2(cjj: &CityJSON) -> Result<(), MyError> {
+    if cjj.thetype != "CityJSON" {
+        return Err(MyError::CityJsonError(
+            "Input file not CityJSON.".to_string(),
+        ));
+    }
+    if cjj.version != "1.1" && cjj.version != "2.0" {
+        return Err(MyError::CityJsonError(
+            "Input file not CityJSON v1.1 nor v2.0.".to_string(),
+        ));
+    }
+
+    //-- first line: the CityJSON "metadata"
+    let cj1: CityJSON = cjj.get_empty_copy();
+    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
+
+    let cos = &cjj.city_objects;
+    for (key, co) in cos {
+        if co.is_toplevel() {
+            let mut cjf = CityJSONFeature::new();
+
+            let mut co2: CityObject = co.clone();
+
+            let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut g_new_vi: Vec<usize> = Vec::new();
+            // let m_oldnew: HashMap<usize, usize> = HashMap::new();
+            // let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+            // let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+            match &mut co2.geometry {
+                Some(x) => {
+                    for mut g in x.iter_mut() {
+                        //-- geometry/boundaries
+                        cat_update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
+                        //-- geometry/material
+                        // cat_update_material(&mut g, &mut m_oldnew);
+                        // println!("== {:?}", m_oldnew);
+                        //-- geometry/texture
+                        // cat_update_texture(&mut g, &mut t_oldnew, &mut t_v_oldnew);
+                    }
+                }
+                None => (),
+            }
+            // cjf["CityObjects"][key] = serde_json::to_value(&co2).unwrap();
+
+            //-- TODO: to fix: children-of-children?
+
+            //-- "slice" geometry vertices
+            cjf.add_co(key.clone(), co2);
+            let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
+            for v in &g_new_vi {
+                g_new_vertices.push(cjj.vertices[*v].clone());
+            }
+            // cjf["vertices"] = serde_json::to_value(&g_new_vertices).unwrap();
+            io::stdout()
+                .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
+        }
+    }
     Ok(())
 }
 
