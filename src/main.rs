@@ -41,9 +41,9 @@ impl From<std::io::Error> for MyError {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Vertex {
-    x: i32,
-    y: i32,
-    z: i32,
+    x: i64,
+    y: i64,
+    z: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -117,6 +117,24 @@ impl Appearance {
             default_theme_texture: None,
             default_theme_material: None,
         }
+    }
+    fn add_material(&mut self, jm: Value) -> usize {
+        let re = match &mut self.materials {
+            Some(x) => match x.iter().position(|e| *e == jm) {
+                Some(y) => y,
+                None => {
+                    x.push(jm);
+                    x.len()
+                }
+            },
+            None => {
+                let mut ls: Vec<Value> = Vec::new();
+                ls.push(jm);
+                self.materials = Some(ls);
+                0
+            }
+        };
+        re
     }
 }
 
@@ -196,14 +214,14 @@ fn collect_from_stdin() -> Result<(), MyError> {
     let stdin = std::io::stdin();
 
     let mut j: Value = json!(null);
-    let mut allvertices: Vec<Vec<i32>> = Vec::new();
+    let mut allvertices: Vec<Vec<i64>> = Vec::new();
     for (i, line) in stdin.lock().lines().enumerate() {
         let l = line.unwrap();
         if i == 0 {
             j = serde_json::from_str(&l)?;
         } else {
             let mut cjf = serde_json::from_str(&l)?;
-            collect_add_one_cjf(&mut j, &mut cjf, &mut allvertices);
+            // collect_add_one_cjf(&mut j, &mut cjf, &mut allvertices); //-- TODO: uncomment this
         }
     }
     j["vertices"] = serde_json::to_value(&allvertices).unwrap();
@@ -215,29 +233,133 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let br = BufReader::new(f);
     let mut j: Value = json!(null);
-    let mut allvertices: Vec<Vec<i32>> = Vec::new();
+    let mut all_g_v: Vec<Vec<i64>> = Vec::new();
+    let mut all_app: Appearance = Appearance::new();
     for (i, line) in br.lines().enumerate() {
-        match line {
+        match &line {
             Ok(content) => {
-                // println!("{}: {:?}", i, content);
                 if i == 0 {
                     j = serde_json::from_str(&content)?;
                 } else {
                     let mut cjf = serde_json::from_str(&content)?;
-                    collect_add_one_cjf(&mut j, &mut cjf, &mut allvertices);
+                    collect_add_one_cjf(&mut j, &mut cjf, &mut all_g_v, &mut all_app);
                 }
             }
             Err(error) => eprintln!("Error reading line: {}", error),
         }
     }
-    j["vertices"] = serde_json::to_value(&allvertices).unwrap();
+    j["vertices"] = serde_json::to_value(&all_g_v).unwrap();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&j).unwrap()).as_bytes())?;
-    // println!("{}", serde_json::to_string_pretty(&j)?);
     Ok(())
 }
 
-fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value, allvertices: &mut Vec<Vec<i32>>) {
-    let offset = allvertices.len();
+fn collect_add_one_cjf(
+    j: &mut Value,
+    cjf: &mut Value,
+    all_g_v: &mut Vec<Vec<i64>>,
+    all_app: &mut Appearance,
+) {
+    let offset = all_g_v.len();
+    for (key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
+        //-- geometry
+        let geoms = co["geometry"].as_array_mut();
+        if geoms.is_some() {
+            collect_update_cjf_geometry_offset(&mut geoms.unwrap(), offset);
+        }
+        //-- appearance
+        // match co.pointer_mut("/appearance") {
+        //     Some(x) => {
+        //         let cjf_app: Appearance = serde_json::from_value(x.take()).unwrap();
+        //         match &cjf_app.materials {
+        //             Some(x) => {
+        //                 let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+        //                 for (i, m) in x.iter().enumerate() {
+        //                     m_oldnew.insert(i, all_app.add_material(m.clone()));
+        //                 }
+        //                 //-- update the material indices
+        //                 // for g in &mut geoms {
+        //                 //     cat_update_material(&mut g, &mut m_oldnew);
+        //                 // }
+        //             }
+        //             None => (),
+        //         }
+        //     }
+        //     None => (),
+        // }
+
+        //-- update the collected json object by adding the CityObjects
+        j["CityObjects"][key] = co.clone();
+    }
+    //-- add the new vertices
+    let mut vertices: Vec<Vec<i64>> = serde_json::from_value(cjf["vertices"].take()).unwrap();
+    all_g_v.append(&mut vertices);
+}
+
+// fn collect_update_cjf_geometry_material(geoms: &mut Vec<Value>, moldnew: &HashMap<usize, usize) {
+//     for g in geoms {
+//         // TODO : add other Geometric primitives
+//         if g["type"] == "MultiSurface" || g["type"] == "CompositeSurface" {
+//             let a: Vec<Option<usize>> =
+//                             serde_json::from_value(g["material"].values.take().into()).unwrap();
+//             let mut a2 = a.clone();
+//             for (i, x) in a.iter().enumerate() {
+//                 if x.is_some() {
+//                     let y2 = m_oldnew.get(&x.unwrap());
+//                     if y2.is_none() {
+//                         let l = m_oldnew.len();
+//                         m_oldnew.insert(x.unwrap(), l);
+//                         a2[i] = Some(l);
+//                     } else {
+//                         let y2 = y2.unwrap();
+//                         a2[i] = Some(*y2);
+//                     }
+//                 }
+//             }
+//             mat.values = Some(serde_json::to_value(&a2).unwrap());
+//         } else if g["type"] == "Solid" {
+//             for shell in g["boundaries"].as_array_mut().unwrap() {
+//                 for surface in shell.as_array_mut().unwrap() {
+//                     for ring in surface.as_array_mut().unwrap() {
+//                         for p in ring.as_array_mut().unwrap() {
+//                             let p1: i64 = p.as_i64().unwrap();
+//                             *p = Value::Number((p1 + offset as i64).into());
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+fn collect_update_cjf_geometry_offset(geoms: &mut Vec<Value>, offset: usize) {
+    for g in geoms {
+        // TODO : add other Geometric primitives
+        if g["type"] == "MultiSurface" || g["type"] == "CompositeSurface" {
+            for surface in g["boundaries"].as_array_mut().unwrap() {
+                for ring in surface.as_array_mut().unwrap() {
+                    for p in ring.as_array_mut().unwrap() {
+                        let p1: i64 = p.as_i64().unwrap();
+                        *p = Value::Number((p1 + offset as i64).into());
+                    }
+                }
+            }
+        } else if g["type"] == "Solid" {
+            for shell in g["boundaries"].as_array_mut().unwrap() {
+                for surface in shell.as_array_mut().unwrap() {
+                    for ring in surface.as_array_mut().unwrap() {
+                        for p in ring.as_array_mut().unwrap() {
+                            let p1: i64 = p.as_i64().unwrap();
+                            *p = Value::Number((p1 + offset as i64).into());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn collect_add_one_cjf_geometry(j: &mut Value, cjf: &mut Value, all_g_v: &mut Vec<Vec<i64>>) {
+    let offset = all_g_v.len();
     for (_key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
         let x = co["geometry"].as_array_mut();
         if x.is_some() {
@@ -272,8 +394,8 @@ fn collect_add_one_cjf(j: &mut Value, cjf: &mut Value, allvertices: &mut Vec<Vec
         j["CityObjects"][key] = value.clone();
     }
     //-- add the new vertices
-    let mut vertices: Vec<Vec<i32>> = serde_json::from_value(cjf["vertices"].take()).unwrap();
-    allvertices.append(&mut vertices);
+    let mut vertices: Vec<Vec<i64>> = serde_json::from_value(cjf["vertices"].take()).unwrap();
+    all_g_v.append(&mut vertices);
 }
 
 fn cat_from_stdin() -> Result<(), MyError> {
@@ -342,7 +464,7 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
     //-- TODO: handling "default-theme-texture": "myDefaultTheme1"?
 
     let cos: HashMap<String, CityObject> = serde_json::from_value(j["CityObjects"].take()).unwrap();
-    let g_old_vertices: Vec<Vec<i32>> = serde_json::from_value(j["vertices"].take()).unwrap();
+    let g_old_vertices: Vec<Vec<i64>> = serde_json::from_value(j["vertices"].take()).unwrap();
     for (key, co) in &cos {
         if co.is_toplevel() {
             let mut cjf = json!({
@@ -392,7 +514,7 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             // }
 
             //-- "slice" geometry vertices
-            let mut g_new_vertices: Vec<Vec<i32>> = Vec::new();
+            let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
             for v in &g_new_vi {
                 g_new_vertices.push(g_old_vertices[*v].clone());
             }
@@ -401,6 +523,7 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             //-- "slice" materials
             if allappearance.is_some() {
                 let aa: &Appearance = allappearance.as_ref().unwrap();
+                // let aa = &(allappearance.unwrap());
                 let mut acjf: Appearance = Appearance::new();
                 acjf.default_theme_material = aa.default_theme_material.clone();
                 acjf.default_theme_texture = aa.default_theme_texture.clone();
@@ -435,8 +558,8 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
                     // cjf["appearance"]["vertices-texture"] =
                     // serde_json::to_value(&t_new_vertices).unwrap();
                 }
-                println!("{:?}", aa);
-                println!("{:?}", acjf);
+                // println!("{:?}", aa);
+                // println!("{:?}", acjf);
                 cjf["appearance"] = serde_json::to_value(&acjf).unwrap();
             }
             // match j.pointer_mut("/appearance/materials") {
