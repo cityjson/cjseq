@@ -139,6 +139,18 @@ impl CityObject {
             None => return true,
         }
     }
+    fn get_children_keys(&self) -> Vec<String> {
+        let mut re: Vec<String> = Vec::new();
+        match &self.children {
+            Some(x) => {
+                for each in x {
+                    re.push(each.to_string());
+                }
+            }
+            None => (),
+        }
+        re
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -153,6 +165,259 @@ struct Geometry {
     material: Option<HashMap<String, Material>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     texture: Option<HashMap<String, Texture>>,
+}
+impl Geometry {
+    fn update_geometry_vi(&mut self, violdnew: &mut HashMap<usize, usize>, newvi: &mut Vec<usize>) {
+        // TODO: GeometryInstance?
+        if self.thetype == "MultiPoint" {
+            let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
+            let mut a2 = a.clone();
+            for (i, x) in a.iter().enumerate() {
+                let kk = violdnew.get(&x);
+                if kk.is_none() {
+                    let l = newvi.len();
+                    violdnew.insert(*x, l);
+                    newvi.push(*x);
+                    a2[i] = l;
+                } else {
+                    let kk = kk.unwrap();
+                    a2[i] = *kk;
+                }
+            }
+            self.boundaries = serde_json::to_value(&a2).unwrap();
+        } else if self.thetype == "MultiLineString" {
+            let a: Vec<Vec<usize>> = serde_json::from_value(self.boundaries.take()).unwrap();
+            let mut a2 = a.clone();
+            for (i, x) in a.iter().enumerate() {
+                for (j, y) in x.iter().enumerate() {
+                    // r.push(z);
+                    let kk = violdnew.get(&y);
+                    if kk.is_none() {
+                        let l = newvi.len();
+                        violdnew.insert(*y, l);
+                        newvi.push(*y);
+                        a2[i][j] = l;
+                    } else {
+                        let kk = kk.unwrap();
+                        a2[i][j] = *kk;
+                    }
+                }
+            }
+            self.boundaries = serde_json::to_value(&a2).unwrap();
+        } else if self.thetype == "MultiSurface" || self.thetype == "CompositeSurface" {
+            let a: Vec<Vec<Vec<usize>>> = serde_json::from_value(self.boundaries.take()).unwrap();
+            let mut a2 = a.clone();
+            for (i, x) in a.iter().enumerate() {
+                for (j, y) in x.iter().enumerate() {
+                    for (k, z) in y.iter().enumerate() {
+                        // r.push(z);
+                        let kk = violdnew.get(&z);
+                        if kk.is_none() {
+                            let l = newvi.len();
+                            violdnew.insert(*z, l);
+                            newvi.push(*z);
+                            a2[i][j][k] = l;
+                        } else {
+                            let kk = kk.unwrap();
+                            a2[i][j][k] = *kk;
+                        }
+                    }
+                }
+            }
+            self.boundaries = serde_json::to_value(&a2).unwrap();
+        } else if self.thetype == "Solid" {
+            let a: Vec<Vec<Vec<Vec<usize>>>> =
+                serde_json::from_value(self.boundaries.take()).unwrap();
+            let mut a2 = a.clone();
+            for (i, x) in a.iter().enumerate() {
+                for (j, y) in x.iter().enumerate() {
+                    for (k, z) in y.iter().enumerate() {
+                        for (l, zz) in z.iter().enumerate() {
+                            // r.push(z);
+                            let kk = violdnew.get(&zz);
+                            if kk.is_none() {
+                                let length = newvi.len();
+                                violdnew.insert(*zz, length);
+                                newvi.push(*zz);
+                                a2[i][j][k][l] = length;
+                            } else {
+                                let kk = kk.unwrap();
+                                a2[i][j][k][l] = *kk;
+                            }
+                        }
+                    }
+                }
+            }
+            self.boundaries = serde_json::to_value(&a2).unwrap();
+        } else if self.thetype == "MultiSolid" || self.thetype == "CompositeSolid" {
+            let a: Vec<Vec<Vec<Vec<Vec<usize>>>>> =
+                serde_json::from_value(self.boundaries.take()).unwrap();
+            let mut a2 = a.clone();
+            for (i, x) in a.iter().enumerate() {
+                for (j, y) in x.iter().enumerate() {
+                    for (k, z) in y.iter().enumerate() {
+                        for (l, zz) in z.iter().enumerate() {
+                            for (m, zzz) in zz.iter().enumerate() {
+                                let kk = violdnew.get(&zzz);
+                                if kk.is_none() {
+                                    let length = newvi.len();
+                                    violdnew.insert(*zzz, length);
+                                    newvi.push(*zzz);
+                                    a2[i][j][k][l][m] = length;
+                                } else {
+                                    let kk = kk.unwrap();
+                                    a2[i][j][k][l][m] = *kk;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            self.boundaries = serde_json::to_value(&a2).unwrap();
+        }
+    }
+    fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
+        match &mut self.material {
+            Some(x) => {
+                for (_key, mat) in &mut *x {
+                    //-- material.value
+                    if mat.value.is_some() {
+                        let thevalue: usize = mat.value.unwrap();
+                        let r = m_oldnew.get(&thevalue);
+                        if r.is_none() {
+                            let l = m_oldnew.len();
+                            m_oldnew.insert(thevalue, l);
+                            mat.value = Some(l);
+                        } else {
+                            let r2 = r.unwrap();
+                            mat.value = Some(*r2);
+                        }
+                        continue;
+                    }
+                    //-- else it's material.values (which differs per geom type)
+                    if self.thetype == "MultiSurface" || self.thetype == "CompositeSurface" {
+                        if mat.values.is_some() {
+                            let a: Vec<Option<usize>> =
+                                serde_json::from_value(mat.values.take().into()).unwrap();
+                            let mut a2 = a.clone();
+                            for (i, x) in a.iter().enumerate() {
+                                if x.is_some() {
+                                    let y2 = m_oldnew.get(&x.unwrap());
+                                    if y2.is_none() {
+                                        let l = m_oldnew.len();
+                                        m_oldnew.insert(x.unwrap(), l);
+                                        a2[i] = Some(l);
+                                    } else {
+                                        let y2 = y2.unwrap();
+                                        a2[i] = Some(*y2);
+                                    }
+                                }
+                            }
+                            mat.values = Some(serde_json::to_value(&a2).unwrap());
+                        }
+                    } else if self.thetype == "Solid" {
+                        if mat.values.is_some() {
+                            let a: Vec<Vec<Option<usize>>> =
+                                serde_json::from_value(mat.values.take().into()).unwrap();
+                            let mut a2 = a.clone();
+                            for (i, x) in a.iter().enumerate() {
+                                for (j, y) in x.iter().enumerate() {
+                                    if y.is_some() {
+                                        let y2 = m_oldnew.get(&y.unwrap());
+                                        if y2.is_none() {
+                                            let l = m_oldnew.len();
+                                            m_oldnew.insert(y.unwrap(), l);
+                                            a2[i][j] = Some(l);
+                                        } else {
+                                            let y2 = y2.unwrap();
+                                            a2[i][j] = Some(*y2);
+                                        }
+                                    }
+                                }
+                            }
+                            mat.values = Some(serde_json::to_value(&a2).unwrap());
+                        }
+                    } else if self.thetype == "MultiSolid" || self.thetype == "CompositeSolid" {
+                        if mat.values.is_some() {
+                            let a: Vec<Vec<Vec<Option<usize>>>> =
+                                serde_json::from_value(mat.values.take().into()).unwrap();
+                            let mut a2 = a.clone();
+                            for (i, x) in a.iter().enumerate() {
+                                for (j, y) in x.iter().enumerate() {
+                                    for (k, z) in y.iter().enumerate() {
+                                        if z.is_some() {
+                                            let y2 = m_oldnew.get(&z.unwrap());
+                                            if y2.is_none() {
+                                                let l = m_oldnew.len();
+                                                m_oldnew.insert(z.unwrap(), l);
+                                                a2[i][j][k] = Some(l);
+                                            } else {
+                                                let y2 = y2.unwrap();
+                                                a2[i][j][k] = Some(*y2);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            mat.values = Some(serde_json::to_value(&a2).unwrap());
+                        }
+                    }
+                }
+                self.material = Some(x.clone());
+            }
+            None => (),
+        }
+    }
+    fn update_texture(
+        &mut self,
+        t_oldnew: &mut HashMap<usize, usize>,
+        t_v_oldnew: &mut HashMap<usize, usize>,
+    ) {
+        match &mut self.texture {
+            Some(x) => {
+                for (_key, tex) in &mut *x {
+                    //-- TODO: other Geometry type for textures
+                    if self.thetype == "MultiSurface" || self.thetype == "CompositeSurface" {
+                        let a: Vec<Vec<Vec<Option<usize>>>> =
+                            serde_json::from_value(tex.values.take().into()).unwrap();
+                        let mut a2 = a.clone();
+                        for (i, x) in a.iter().enumerate() {
+                            for (j, y) in x.iter().enumerate() {
+                                for (k, z) in y.iter().enumerate() {
+                                    if z.is_some() {
+                                        let thevalue: usize = z.unwrap();
+                                        if k == 0 {
+                                            let y2 = t_oldnew.get(&thevalue);
+                                            if y2.is_none() {
+                                                let l = t_oldnew.len();
+                                                t_oldnew.insert(thevalue, l);
+                                                a2[i][j][k] = Some(l);
+                                            } else {
+                                                let y2 = y2.unwrap();
+                                                a2[i][j][k] = Some(*y2);
+                                            }
+                                        } else {
+                                            let y2 = t_v_oldnew.get(&thevalue);
+                                            if y2.is_none() {
+                                                let l = t_v_oldnew.len();
+                                                t_v_oldnew.insert(thevalue, l);
+                                                a2[i][j][k] = Some(l);
+                                            } else {
+                                                let y2 = y2.unwrap();
+                                                a2[i][j][k] = Some(*y2);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        tex.values = Some(serde_json::to_value(&a2).unwrap());
+                    }
+                }
+            }
+            None => (),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -472,8 +737,8 @@ fn cat_from_stdin() -> Result<(), MyError> {
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
-            let mut j: Value = serde_json::from_str(&input)?;
-            let _ = cat(&mut j);
+            let cjj: CityJSON = serde_json::from_str(&input)?;
+            let _ = cat(&cjj)?;
         }
         Err(error) => {
             println!("Error: {}", error);
@@ -482,31 +747,15 @@ fn cat_from_stdin() -> Result<(), MyError> {
     Ok(())
 }
 
-// fn test(file: &PathBuf) -> Result<(), MyError> {
-//     let f = File::open(file.canonicalize()?)?;
-//     let br = BufReader::new(f);
-//     let mut cjj: CityJSON = serde_json::from_reader(br)?;
-//     let vs = &mut cjj.vertices;
-//     vs.clear();
-//     vs.push(vec![0, 2, 99]);
-//     println!("{}", serde_json::to_string(&cjj).unwrap());
-//     Ok(())
-// }
-
 fn cat_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let br = BufReader::new(f);
-
     let cjj: CityJSON = serde_json::from_reader(br)?;
-    cat2(&cjj)?;
-    //     let vs = &mut cjj.vertices;
-    //     vs.clear();
-    //     vs.push(vec![0, 2, 99]);
-    // cat(&mut j)?;
+    cat(&cjj)?;
     Ok(())
 }
 
-fn cat2(cjj: &CityJSON) -> Result<(), MyError> {
+fn cat(cjj: &CityJSON) -> Result<(), MyError> {
     if cjj.thetype != "CityJSON" {
         return Err(MyError::CityJsonError(
             "Input file not CityJSON.".to_string(),
@@ -522,105 +771,12 @@ fn cat2(cjj: &CityJSON) -> Result<(), MyError> {
     let cj1: CityJSON = cjj.get_empty_copy();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
+    //-- the other lines
     let cos = &cjj.city_objects;
     for (key, co) in cos {
         if co.is_toplevel() {
             let mut cjf = CityJSONFeature::new();
-
             let mut co2: CityObject = co.clone();
-
-            let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut g_new_vi: Vec<usize> = Vec::new();
-            // let m_oldnew: HashMap<usize, usize> = HashMap::new();
-            // let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-            // let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-            match &mut co2.geometry {
-                Some(x) => {
-                    for mut g in x.iter_mut() {
-                        //-- geometry/boundaries
-                        cat_update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
-                        //-- geometry/material
-                        // cat_update_material(&mut g, &mut m_oldnew);
-                        // println!("== {:?}", m_oldnew);
-                        //-- geometry/texture
-                        // cat_update_texture(&mut g, &mut t_oldnew, &mut t_v_oldnew);
-                    }
-                }
-                None => (),
-            }
-            // cjf["CityObjects"][key] = serde_json::to_value(&co2).unwrap();
-
-            //-- TODO: to fix: children-of-children?
-
-            //-- "slice" geometry vertices
-            cjf.add_co(key.clone(), co2);
-            let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
-            for v in &g_new_vi {
-                g_new_vertices.push(cjj.vertices[*v].clone());
-            }
-            // cjf["vertices"] = serde_json::to_value(&g_new_vertices).unwrap();
-            io::stdout()
-                .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
-        }
-    }
-    Ok(())
-}
-
-fn cat(j: &mut Value) -> Result<(), MyError> {
-    if j["type"] != "CityJSON" {
-        return Err(MyError::CityJsonError(
-            "Input file not CityJSON.".to_string(),
-        ));
-    }
-    if j["version"] != "1.1" && j["version"] != "2.0" {
-        return Err(MyError::CityJsonError(
-            "Input file not CityJSON v1.1 nor v2.0.".to_string(),
-        ));
-    }
-
-    //-- 1st line: CityJSON metadata
-    let mut cj1 = json!({
-        "type": "CityJSON",
-        "version": j["version"],
-        "transform": j["transform"],
-        "CityObjects": json!({}),
-        "vertices": json!([])
-    });
-    if j["metadata"] != json!(null) {
-        cj1["metadata"] = j["metadata"].clone();
-    }
-    if j["geometry-templates"] != json!(null) {
-        cj1["geometry-templates"] = j["geometry-templates"].clone();
-    }
-    if j["extensions"] != json!(null) {
-        cj1["extensions"] = j["extensions"].clone();
-    }
-    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
-
-    let mut allappearance: Option<Appearance> = None;
-    match j.pointer_mut("/appearance") {
-        Some(x) => {
-            allappearance = serde_json::from_value(x.take()).unwrap();
-            // println!("{:?}", allappearance);
-            // std::process::exit(1);
-        }
-        None => (),
-    }
-
-    //-- TODO: handling "default-theme-texture": "myDefaultTheme1"?
-
-    let cos: HashMap<String, CityObject> = serde_json::from_value(j["CityObjects"].take()).unwrap();
-    let g_old_vertices: Vec<Vec<i64>> = serde_json::from_value(j["vertices"].take()).unwrap();
-    for (key, co) in &cos {
-        if co.is_toplevel() {
-            let mut cjf = json!({
-                    "type": "CityJSONFeature",
-                    "id": key,
-                    "CityObjects": json!({}),
-                    "vertices": json!([])
-            });
-            let co2: &mut CityObject = &mut co.clone();
-
             let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
             let mut g_new_vi: Vec<usize> = Vec::new();
             let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
@@ -628,73 +784,68 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
             let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
             match &mut co2.geometry {
                 Some(x) => {
-                    for mut g in x.iter_mut() {
-                        //-- geometry/boundaries
-                        cat_update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
-                        //-- geometry/material
-                        cat_update_material(&mut g, &mut m_oldnew);
-                        // println!("== {:?}", m_oldnew);
-                        //-- geometry/texture
-                        cat_update_texture(&mut g, &mut t_oldnew, &mut t_v_oldnew);
+                    for g in x.iter_mut() {
+                        g.update_geometry_vi(&mut g_vi_oldnew, &mut g_new_vi);
+                        g.update_material(&mut m_oldnew);
+                        g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
                     }
                 }
                 None => (),
             }
-            cjf["CityObjects"][key] = serde_json::to_value(&co2).unwrap();
+            cjf.add_co(key.clone(), co2);
+            cjf.id = key.to_string();
 
             //-- TODO: to fix: children-of-children?
             //-- process all the children (only one-level lower)
-            // for childkey in co.get_children_keys() {
-            //     let coc = cos.get(&childkey).unwrap();
-            //     let coc2: &mut CityObject = &mut coc.clone();
-            //     match &mut coc2.geometry {
-            //         Some(x) => {
-            //             for mut g in x.iter_mut() {
-            //                 cat_update_geometry_vi(&mut g, &mut g_vi_oldnew, &mut g_new_vi);
-            //                 // TODO: material + children
-            //             }
-            //         }
-            //         None => (),
-            //     }
-            //     cjf["CityObjects"][childkey] = serde_json::to_value(&coc2).unwrap();
-            // }
+            for childkey in co.get_children_keys() {
+                let coc = cos.get(&childkey).unwrap();
+                let mut coc2: CityObject = coc.clone();
+                match &mut coc2.geometry {
+                    Some(x) => {
+                        for g in x.iter_mut() {
+                            g.update_geometry_vi(&mut g_vi_oldnew, &mut g_new_vi);
+                            // TODO: material + children
+                        }
+                    }
+                    None => (),
+                }
+                cjf.add_co(childkey.clone(), coc2);
+            }
 
             //-- "slice" geometry vertices
             let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
             for v in &g_new_vi {
-                g_new_vertices.push(g_old_vertices[*v].clone());
+                g_new_vertices.push(cjj.vertices[*v].clone());
             }
-            cjf["vertices"] = serde_json::to_value(&g_new_vertices).unwrap();
+            cjf.vertices = g_new_vertices;
 
             //-- "slice" materials
-            if allappearance.is_some() {
-                let aa: &Appearance = allappearance.as_ref().unwrap();
-                // let aa = &(allappearance.unwrap());
+
+            if cjj.appearance.is_some() {
+                let a = cjj.appearance.as_ref().unwrap();
                 let mut acjf: Appearance = Appearance::new();
-                acjf.default_theme_material = aa.default_theme_material.clone();
-                acjf.default_theme_texture = aa.default_theme_texture.clone();
-                if aa.materials.is_some() {
-                    let am = aa.materials.as_ref().unwrap();
+                acjf.default_theme_material = a.default_theme_material.clone();
+                acjf.default_theme_texture = a.default_theme_texture.clone();
+                if a.materials.is_some() {
+                    let am = a.materials.as_ref().unwrap();
                     let mut mats2: Vec<Value> = Vec::new();
                     mats2.resize(m_oldnew.len(), json!(null));
                     for (old, new) in &m_oldnew {
                         mats2[*new] = am[*old].clone();
                     }
                     acjf.materials = Some(mats2);
-                    // cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
                 }
-                if aa.textures.is_some() {
-                    let at = aa.textures.as_ref().unwrap();
+                if a.textures.is_some() {
+                    let at = a.textures.as_ref().unwrap();
                     let mut texs2: Vec<Value> = Vec::new();
                     texs2.resize(t_oldnew.len(), json!(null));
                     for (old, new) in &t_oldnew {
                         texs2[*new] = at[*old].clone();
                     }
                     acjf.textures = Some(texs2);
-                    // cjf["appearance"]["textures"] = serde_json::to_value(&texs2).unwrap();
                 }
-                if aa.vertices_texture.is_some() {
-                    let atv = aa.vertices_texture.as_ref().unwrap();
+                if a.vertices_texture.is_some() {
+                    let atv = a.vertices_texture.as_ref().unwrap();
                     let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
                     t_new_vertices.resize(t_v_oldnew.len(), vec![]);
                     for (old, new) in &t_v_oldnew {
@@ -706,306 +857,12 @@ fn cat(j: &mut Value) -> Result<(), MyError> {
                 }
                 // println!("{:?}", aa);
                 // println!("{:?}", acjf);
-                cjf["appearance"] = serde_json::to_value(&acjf).unwrap();
+                cjf.appearance = Some(acjf);
             }
-            // match j.pointer_mut("/appearance/materials") {
-            //     Some(_x) => {
-            //         let mut mats2: Vec<Value> = Vec::new();
-            //         mats2.resize(m_oldnew.len(), json!(null));
-            //         for (old, new) in &m_oldnew {
-            //             mats2[*new] = allmats[*old].clone();
-            //         }
-            //         cjf["appearance"]["materials"] = serde_json::to_value(&mats2).unwrap();
-            //     }
-            //     None => (),
-            // }
 
-            // //-- "slice" textures
-            // match j.pointer_mut("/appearance/textures") {
-            //     Some(_x) => {
-            //         let mut texs2: Vec<Value> = Vec::new();
-            //         texs2.resize(t_oldnew.len(), json!(null));
-            //         for (old, new) in &t_oldnew {
-            //             texs2[*new] = alltexs[*old].clone();
-            //         }
-            //         cjf["appearance"]["textures"] = serde_json::to_value(&texs2).unwrap();
-            //     }
-            //     None => (),
-            // }
-            // //-- "slice" vertices-texture
-            // match j.pointer_mut("/appearance/vertices-texture") {
-            //     Some(_x) => {
-            //         let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
-            //         t_new_vertices.resize(t_v_oldnew.len(), vec![]);
-            //         for (old, new) in &t_v_oldnew {
-            //             t_new_vertices[*new] = t_old_vertices[*old].clone();
-            //         }
-            //         cjf["appearance"]["vertices-texture"] =
-            //             serde_json::to_value(&t_new_vertices).unwrap();
-            //     }
-            //     None => (),
-            // }
-
-            //-- write to stdout
             io::stdout()
                 .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
         }
     }
     Ok(())
-}
-
-fn cat_update_texture(
-    g: &mut Geometry,
-    t_oldnew: &mut HashMap<usize, usize>,
-    t_v_oldnew: &mut HashMap<usize, usize>,
-) {
-    match &mut g.texture {
-        Some(x) => {
-            for (_key, tex) in &mut *x {
-                if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
-                    let a: Vec<Vec<Vec<Option<usize>>>> =
-                        serde_json::from_value(tex.values.take().into()).unwrap();
-                    let mut a2 = a.clone();
-                    for (i, x) in a.iter().enumerate() {
-                        for (j, y) in x.iter().enumerate() {
-                            for (k, z) in y.iter().enumerate() {
-                                if z.is_some() {
-                                    let thevalue: usize = z.unwrap();
-                                    if k == 0 {
-                                        let y2 = t_oldnew.get(&thevalue);
-                                        if y2.is_none() {
-                                            let l = t_oldnew.len();
-                                            t_oldnew.insert(thevalue, l);
-                                            a2[i][j][k] = Some(l);
-                                        } else {
-                                            let y2 = y2.unwrap();
-                                            a2[i][j][k] = Some(*y2);
-                                        }
-                                    } else {
-                                        let y2 = t_v_oldnew.get(&thevalue);
-                                        if y2.is_none() {
-                                            let l = t_v_oldnew.len();
-                                            t_v_oldnew.insert(thevalue, l);
-                                            a2[i][j][k] = Some(l);
-                                        } else {
-                                            let y2 = y2.unwrap();
-                                            a2[i][j][k] = Some(*y2);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    tex.values = Some(serde_json::to_value(&a2).unwrap());
-                }
-            }
-        }
-        None => (),
-    }
-}
-
-fn cat_update_material(g: &mut Geometry, m_oldnew: &mut HashMap<usize, usize>) {
-    match &mut g.material {
-        Some(x) => {
-            for (_key, mat) in &mut *x {
-                //-- material.value
-                if mat.value.is_some() {
-                    let thevalue: usize = mat.value.unwrap();
-                    let r = m_oldnew.get(&thevalue);
-                    if r.is_none() {
-                        let l = m_oldnew.len();
-                        m_oldnew.insert(thevalue, l);
-                        mat.value = Some(l);
-                    } else {
-                        let r2 = r.unwrap();
-                        mat.value = Some(*r2);
-                    }
-                    continue;
-                }
-                //-- else it's material.values (which differs per geom type)
-                if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
-                    if mat.values.is_some() {
-                        let a: Vec<Option<usize>> =
-                            serde_json::from_value(mat.values.take().into()).unwrap();
-                        let mut a2 = a.clone();
-                        for (i, x) in a.iter().enumerate() {
-                            if x.is_some() {
-                                let y2 = m_oldnew.get(&x.unwrap());
-                                if y2.is_none() {
-                                    let l = m_oldnew.len();
-                                    m_oldnew.insert(x.unwrap(), l);
-                                    a2[i] = Some(l);
-                                } else {
-                                    let y2 = y2.unwrap();
-                                    a2[i] = Some(*y2);
-                                }
-                            }
-                        }
-                        mat.values = Some(serde_json::to_value(&a2).unwrap());
-                    }
-                } else if g.thetype == "Solid" {
-                    if mat.values.is_some() {
-                        let a: Vec<Vec<Option<usize>>> =
-                            serde_json::from_value(mat.values.take().into()).unwrap();
-                        let mut a2 = a.clone();
-                        for (i, x) in a.iter().enumerate() {
-                            for (j, y) in x.iter().enumerate() {
-                                if y.is_some() {
-                                    let y2 = m_oldnew.get(&y.unwrap());
-                                    if y2.is_none() {
-                                        let l = m_oldnew.len();
-                                        m_oldnew.insert(y.unwrap(), l);
-                                        a2[i][j] = Some(l);
-                                    } else {
-                                        let y2 = y2.unwrap();
-                                        a2[i][j] = Some(*y2);
-                                    }
-                                }
-                            }
-                        }
-                        mat.values = Some(serde_json::to_value(&a2).unwrap());
-                    }
-                } else if g.thetype == "MultiSolid" || g.thetype == "CompositeSolid" {
-                    if mat.values.is_some() {
-                        let a: Vec<Vec<Vec<Option<usize>>>> =
-                            serde_json::from_value(mat.values.take().into()).unwrap();
-                        let mut a2 = a.clone();
-                        for (i, x) in a.iter().enumerate() {
-                            for (j, y) in x.iter().enumerate() {
-                                for (k, z) in y.iter().enumerate() {
-                                    if z.is_some() {
-                                        let y2 = m_oldnew.get(&z.unwrap());
-                                        if y2.is_none() {
-                                            let l = m_oldnew.len();
-                                            m_oldnew.insert(z.unwrap(), l);
-                                            a2[i][j][k] = Some(l);
-                                        } else {
-                                            let y2 = y2.unwrap();
-                                            a2[i][j][k] = Some(*y2);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        mat.values = Some(serde_json::to_value(&a2).unwrap());
-                    }
-                }
-            }
-            g.material = Some(x.clone());
-        }
-        None => (),
-    }
-}
-
-fn cat_update_geometry_vi(
-    g: &mut Geometry,
-    violdnew: &mut HashMap<usize, usize>,
-    newvi: &mut Vec<usize>,
-) {
-    // TODO: GeometryInstance?
-    if g.thetype == "MultiPoint" {
-        let a: Vec<usize> = serde_json::from_value(g.boundaries.clone()).unwrap();
-        let mut a2 = a.clone();
-        for (i, x) in a.iter().enumerate() {
-            let kk = violdnew.get(&x);
-            if kk.is_none() {
-                let l = newvi.len();
-                violdnew.insert(*x, l);
-                newvi.push(*x);
-                a2[i] = l;
-            } else {
-                let kk = kk.unwrap();
-                a2[i] = *kk;
-            }
-        }
-        g.boundaries = serde_json::to_value(&a2).unwrap();
-    } else if g.thetype == "MultiLineString" {
-        let a: Vec<Vec<usize>> = serde_json::from_value(g.boundaries.take()).unwrap();
-        let mut a2 = a.clone();
-        for (i, x) in a.iter().enumerate() {
-            for (j, y) in x.iter().enumerate() {
-                // r.push(z);
-                let kk = violdnew.get(&y);
-                if kk.is_none() {
-                    let l = newvi.len();
-                    violdnew.insert(*y, l);
-                    newvi.push(*y);
-                    a2[i][j] = l;
-                } else {
-                    let kk = kk.unwrap();
-                    a2[i][j] = *kk;
-                }
-            }
-        }
-        g.boundaries = serde_json::to_value(&a2).unwrap();
-    } else if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
-        let a: Vec<Vec<Vec<usize>>> = serde_json::from_value(g.boundaries.take()).unwrap();
-        let mut a2 = a.clone();
-        for (i, x) in a.iter().enumerate() {
-            for (j, y) in x.iter().enumerate() {
-                for (k, z) in y.iter().enumerate() {
-                    // r.push(z);
-                    let kk = violdnew.get(&z);
-                    if kk.is_none() {
-                        let l = newvi.len();
-                        violdnew.insert(*z, l);
-                        newvi.push(*z);
-                        a2[i][j][k] = l;
-                    } else {
-                        let kk = kk.unwrap();
-                        a2[i][j][k] = *kk;
-                    }
-                }
-            }
-        }
-        g.boundaries = serde_json::to_value(&a2).unwrap();
-    } else if g.thetype == "Solid" {
-        let a: Vec<Vec<Vec<Vec<usize>>>> = serde_json::from_value(g.boundaries.take()).unwrap();
-        let mut a2 = a.clone();
-        for (i, x) in a.iter().enumerate() {
-            for (j, y) in x.iter().enumerate() {
-                for (k, z) in y.iter().enumerate() {
-                    for (l, zz) in z.iter().enumerate() {
-                        // r.push(z);
-                        let kk = violdnew.get(&zz);
-                        if kk.is_none() {
-                            let length = newvi.len();
-                            violdnew.insert(*zz, length);
-                            newvi.push(*zz);
-                            a2[i][j][k][l] = length;
-                        } else {
-                            let kk = kk.unwrap();
-                            a2[i][j][k][l] = *kk;
-                        }
-                    }
-                }
-            }
-        }
-        g.boundaries = serde_json::to_value(&a2).unwrap();
-    } else if g.thetype == "MultiSolid" || g.thetype == "CompositeSolid" {
-        let a: Vec<Vec<Vec<Vec<Vec<usize>>>>> =
-            serde_json::from_value(g.boundaries.take()).unwrap();
-        let mut a2 = a.clone();
-        for (i, x) in a.iter().enumerate() {
-            for (j, y) in x.iter().enumerate() {
-                for (k, z) in y.iter().enumerate() {
-                    for (l, zz) in z.iter().enumerate() {
-                        for (m, zzz) in zz.iter().enumerate() {
-                            let kk = violdnew.get(&zzz);
-                            if kk.is_none() {
-                                let length = newvi.len();
-                                violdnew.insert(*zzz, length);
-                                newvi.push(*zzz);
-                                a2[i][j][k][l][m] = length;
-                            } else {
-                                let kk = kk.unwrap();
-                                a2[i][j][k][l][m] = *kk;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        g.boundaries = serde_json::to_value(&a2).unwrap();
-    }
 }
