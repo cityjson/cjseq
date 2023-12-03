@@ -105,19 +105,46 @@ impl CityJSON {
     fn add_vertices(&mut self, mut v: Vec<Vec<i64>>) {
         self.vertices.append(&mut v);
     }
+    fn add_material(&mut self, jm: Value) -> usize {
+        let re = match &mut self.appearance {
+            Some(x) => x.add_material(jm),
+            None => {
+                let mut a: Appearance = Appearance::new();
+                let re = a.add_material(jm);
+                self.appearance = Some(a);
+                re
+            }
+        };
+        re
+    }
     fn add_one_cjf(&mut self, mut cjf: CityJSONFeature) {
-        let offset = self.vertices.len();
+        let v_offset = self.vertices.len();
+
+        //-- appearance
+        let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+        if let Some(cjf_app) = &cjf.appearance {
+            // println!("{:?}", cjf_app);
+            if let Some(cjf_material) = &cjf_app.materials {
+                // println!("{:?}", cjf_material);
+                for (i, m) in cjf_material.iter().enumerate() {
+                    m_oldnew.insert(i, self.add_material(m.clone()));
+                }
+            }
+        }
+
         for (key, co) in &mut cjf.city_objects {
-            //-- geometry
+            //-- boundaries
             if let Some(ref mut geoms) = &mut co.geometry {
                 // TODO : add other Geometric primitives
                 for g in geoms.iter_mut() {
+                    //-- material
+                    g.update_material(&mut m_oldnew);
                     if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
                         for surface in g.boundaries.as_array_mut().unwrap() {
                             for ring in surface.as_array_mut().unwrap() {
                                 for p in ring.as_array_mut().unwrap() {
                                     let p1: i64 = p.as_i64().unwrap();
-                                    *p = Value::Number((p1 + offset as i64).into());
+                                    *p = Value::Number((p1 + v_offset as i64).into());
                                 }
                             }
                         }
@@ -127,7 +154,7 @@ impl CityJSON {
                                 for ring in surface.as_array_mut().unwrap() {
                                     for p in ring.as_array_mut().unwrap() {
                                         let p1: i64 = p.as_i64().unwrap();
-                                        *p = Value::Number((p1 + offset as i64).into());
+                                        *p = Value::Number((p1 + v_offset as i64).into());
                                     }
                                 }
                             }
@@ -537,7 +564,7 @@ impl Appearance {
                 Some(y) => y,
                 None => {
                     x.push(jm);
-                    x.len()
+                    x.len() - 1
                 }
             },
             None => {
