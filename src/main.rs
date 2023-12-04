@@ -105,6 +105,16 @@ impl CityJSON {
     fn add_vertices(&mut self, mut v: Vec<Vec<i64>>) {
         self.vertices.append(&mut v);
     }
+    fn add_vertices_texture(&mut self, vs: Vec<Vec<f64>>) {
+        match &mut self.appearance {
+            Some(x) => x.add_vertices_texture(vs),
+            None => {
+                let mut a: Appearance = Appearance::new();
+                a.add_vertices_texture(vs);
+                self.appearance = Some(a);
+            }
+        };
+    }
     fn add_material(&mut self, jm: Value) -> usize {
         let re = match &mut self.appearance {
             Some(x) => x.add_material(jm),
@@ -117,18 +127,42 @@ impl CityJSON {
         };
         re
     }
+    fn add_texture(&mut self, jm: Value) -> usize {
+        let re = match &mut self.appearance {
+            Some(x) => x.add_texture(jm),
+            None => {
+                let mut a: Appearance = Appearance::new();
+                let re = a.add_texture(jm);
+                self.appearance = Some(a);
+                re
+            }
+        };
+        re
+    }
     fn add_one_cjf(&mut self, mut cjf: CityJSONFeature) {
-        let v_offset = self.vertices.len();
-
-        //-- appearance
+        let mut g_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+        let g_offset = self.vertices.len();
+        println!("=>{:?}--{}", cjf.id, g_offset);
+        let mut t_offset = 0;
         if let Some(cjf_app) = &cjf.appearance {
             // println!("{:?}", cjf_app);
-            if let Some(cjf_material) = &cjf_app.materials {
-                // println!("{:?}", cjf_material);
-                for (i, m) in cjf_material.iter().enumerate() {
+            if let Some(cjf_mat) = &cjf_app.materials {
+                // println!("{:?}", cjf_mat);
+                for (i, m) in cjf_mat.iter().enumerate() {
                     m_oldnew.insert(i, self.add_material(m.clone()));
                 }
+            }
+            if let Some(cjf_tex) = &cjf_app.textures {
+                for (i, m) in cjf_tex.iter().enumerate() {
+                    t_oldnew.insert(i, self.add_texture(m.clone()));
+                }
+            }
+            if let Some(cjf_v_tex) = &cjf_app.vertices_texture {
+                t_offset = cjf_v_tex.len();
+                self.add_vertices_texture(cjf_v_tex.clone());
             }
         }
 
@@ -137,29 +171,12 @@ impl CityJSON {
             if let Some(ref mut geoms) = &mut co.geometry {
                 // TODO : add other Geometric primitives
                 for g in geoms.iter_mut() {
+                    //-- boundaries
+                    g.update_geometry_boundaries(&mut g_oldnew, g_offset);
                     //-- material
                     g.update_material(&mut m_oldnew);
-                    if g.thetype == "MultiSurface" || g.thetype == "CompositeSurface" {
-                        for surface in g.boundaries.as_array_mut().unwrap() {
-                            for ring in surface.as_array_mut().unwrap() {
-                                for p in ring.as_array_mut().unwrap() {
-                                    let p1: i64 = p.as_i64().unwrap();
-                                    *p = Value::Number((p1 + v_offset as i64).into());
-                                }
-                            }
-                        }
-                    } else if g.thetype == "Solid" {
-                        for shell in g.boundaries.as_array_mut().unwrap() {
-                            for surface in shell.as_array_mut().unwrap() {
-                                for ring in surface.as_array_mut().unwrap() {
-                                    for p in ring.as_array_mut().unwrap() {
-                                        let p1: i64 = p.as_i64().unwrap();
-                                        *p = Value::Number((p1 + v_offset as i64).into());
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    //-- texture
+                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, t_offset);
                 }
             }
             //-- update the collected json object by adding the CityObjects
@@ -258,17 +275,17 @@ struct Geometry {
     texture: Option<HashMap<String, Texture>>,
 }
 impl Geometry {
-    fn update_geometry_vi(&mut self, violdnew: &mut HashMap<usize, usize>, newvi: &mut Vec<usize>) {
+    fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>, offset: usize) {
         // TODO: GeometryInstance?
+        // let l2: usize = violdnew.len();
         if self.thetype == "MultiPoint" {
             let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
             let mut a2 = a.clone();
             for (i, x) in a.iter().enumerate() {
                 let kk = violdnew.get(&x);
                 if kk.is_none() {
-                    let l = newvi.len();
+                    let l = violdnew.len() + offset;
                     violdnew.insert(*x, l);
-                    newvi.push(*x);
                     a2[i] = l;
                 } else {
                     let kk = kk.unwrap();
@@ -284,9 +301,8 @@ impl Geometry {
                     // r.push(z);
                     let kk = violdnew.get(&y);
                     if kk.is_none() {
-                        let l = newvi.len();
+                        let l = violdnew.len() + offset;
                         violdnew.insert(*y, l);
-                        newvi.push(*y);
                         a2[i][j] = l;
                     } else {
                         let kk = kk.unwrap();
@@ -304,9 +320,8 @@ impl Geometry {
                         // r.push(z);
                         let kk = violdnew.get(&z);
                         if kk.is_none() {
-                            let l = newvi.len();
+                            let l = violdnew.len() + offset;
                             violdnew.insert(*z, l);
-                            newvi.push(*z);
                             a2[i][j][k] = l;
                         } else {
                             let kk = kk.unwrap();
@@ -327,10 +342,9 @@ impl Geometry {
                             // r.push(z);
                             let kk = violdnew.get(&zz);
                             if kk.is_none() {
-                                let length = newvi.len();
-                                violdnew.insert(*zz, length);
-                                newvi.push(*zz);
-                                a2[i][j][k][l] = length;
+                                let l = violdnew.len() + offset;
+                                violdnew.insert(*zz, l);
+                                a2[i][j][k][l] = l;
                             } else {
                                 let kk = kk.unwrap();
                                 a2[i][j][k][l] = *kk;
@@ -351,10 +365,9 @@ impl Geometry {
                             for (m, zzz) in zz.iter().enumerate() {
                                 let kk = violdnew.get(&zzz);
                                 if kk.is_none() {
-                                    let length = newvi.len();
-                                    violdnew.insert(*zzz, length);
-                                    newvi.push(*zzz);
-                                    a2[i][j][k][l][m] = length;
+                                    let l = violdnew.len() + offset;
+                                    violdnew.insert(*zzz, l);
+                                    a2[i][j][k][l][m] = l;
                                 } else {
                                     let kk = kk.unwrap();
                                     a2[i][j][k][l][m] = *kk;
@@ -463,6 +476,7 @@ impl Geometry {
         &mut self,
         t_oldnew: &mut HashMap<usize, usize>,
         t_v_oldnew: &mut HashMap<usize, usize>,
+        offset: usize,
     ) {
         match &mut self.texture {
             Some(x) => {
@@ -491,7 +505,7 @@ impl Geometry {
                                             let y2 = t_v_oldnew.get(&thevalue);
                                             if y2.is_none() {
                                                 let l = t_v_oldnew.len();
-                                                t_v_oldnew.insert(thevalue, l);
+                                                t_v_oldnew.insert(thevalue, l + offset);
                                                 a2[i][j][k] = Some(l);
                                             } else {
                                                 let y2 = y2.unwrap();
@@ -576,6 +590,36 @@ impl Appearance {
         };
         re
     }
+    fn add_texture(&mut self, jm: Value) -> usize {
+        let re = match &mut self.textures {
+            Some(x) => match x.iter().position(|e| *e == jm) {
+                Some(y) => y,
+                None => {
+                    x.push(jm);
+                    x.len() - 1
+                }
+            },
+            None => {
+                let mut ls: Vec<Value> = Vec::new();
+                ls.push(jm);
+                self.textures = Some(ls);
+                0
+            }
+        };
+        re
+    }
+    fn add_vertices_texture(&mut self, mut vs: Vec<Vec<f64>>) {
+        match &mut self.vertices_texture {
+            Some(x) => {
+                x.append(&mut vs);
+            }
+            None => {
+                let mut ls: Vec<Vec<f64>> = Vec::new();
+                ls.append(&mut vs);
+                self.vertices_texture = Some(ls);
+            }
+        };
+    }
 }
 
 fn main() {
@@ -639,7 +683,6 @@ fn main() {
 fn collect_from_stdin() -> Result<(), MyError> {
     let stdin = std::io::stdin();
     let mut cjj: CityJSON = CityJSON::new();
-    // let mut allvertices: Vec<Vec<i64>> = Vec::new();
     for (i, line) in stdin.lock().lines().enumerate() {
         let l = line.unwrap();
         if i == 0 {
@@ -647,10 +690,8 @@ fn collect_from_stdin() -> Result<(), MyError> {
         } else {
             let cjf: CityJSONFeature = serde_json::from_str(&l)?;
             cjj.add_one_cjf(cjf);
-            // collect_add_one_cjf(&mut j, &mut cjf, &mut allvertices); //-- TODO: uncomment this
         }
     }
-    // j["vertices"] = serde_json::to_value(&allvertices).unwrap();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }
@@ -658,170 +699,25 @@ fn collect_from_stdin() -> Result<(), MyError> {
 fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let br = BufReader::new(f);
-    let mut j: Value = json!(null);
-    let mut all_g_v: Vec<Vec<i64>> = Vec::new();
-    let mut all_app: Appearance = Appearance::new();
+    let mut cjj: CityJSON = CityJSON::new();
+    // let mut j: Value = json!(null);
+    // let mut all_g_v: Vec<Vec<i64>> = Vec::new();
+    // let mut all_app: Appearance = Appearance::new();
     for (i, line) in br.lines().enumerate() {
         match &line {
-            Ok(content) => {
+            Ok(l) => {
                 if i == 0 {
-                    j = serde_json::from_str(&content)?;
+                    cjj = serde_json::from_str(&l)?;
                 } else {
-                    let mut cjf = serde_json::from_str(&content)?;
-                    collect_add_one_cjf(&mut j, &mut cjf, &mut all_g_v, &mut all_app);
+                    let cjf: CityJSONFeature = serde_json::from_str(&l)?;
+                    cjj.add_one_cjf(cjf);
                 }
             }
             Err(error) => eprintln!("Error reading line: {}", error),
         }
     }
-    j["vertices"] = serde_json::to_value(&all_g_v).unwrap();
-    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&j).unwrap()).as_bytes())?;
+    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
-}
-
-fn collect_add_one_cjf(
-    j: &mut Value,
-    cjf: &mut Value,
-    all_g_v: &mut Vec<Vec<i64>>,
-    all_app: &mut Appearance,
-) {
-    let offset = all_g_v.len();
-    for (key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
-        //-- geometry
-        let geoms = co["geometry"].as_array_mut();
-        if geoms.is_some() {
-            collect_update_cjf_geometry_offset(&mut geoms.unwrap(), offset);
-        }
-        //-- appearance
-        // match co.pointer_mut("/appearance") {
-        //     Some(x) => {
-        //         let cjf_app: Appearance = serde_json::from_value(x.take()).unwrap();
-        //         match &cjf_app.materials {
-        //             Some(x) => {
-        //                 let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-        //                 for (i, m) in x.iter().enumerate() {
-        //                     m_oldnew.insert(i, all_app.add_material(m.clone()));
-        //                 }
-        //                 //-- update the material indices
-        //                 // for g in &mut geoms {
-        //                 //     cat_update_material(&mut g, &mut m_oldnew);
-        //                 // }
-        //             }
-        //             None => (),
-        //         }
-        //     }
-        //     None => (),
-        // }
-
-        //-- update the collected json object by adding the CityObjects
-        j["CityObjects"][key] = co.clone();
-    }
-    //-- add the new vertices
-    let mut vertices: Vec<Vec<i64>> = serde_json::from_value(cjf["vertices"].take()).unwrap();
-    all_g_v.append(&mut vertices);
-}
-
-// fn collect_update_cjf_geometry_material(geoms: &mut Vec<Value>, moldnew: &HashMap<usize, usize) {
-//     for g in geoms {
-//         // TODO : add other Geometric primitives
-//         if g["type"] == "MultiSurface" || g["type"] == "CompositeSurface" {
-//             let a: Vec<Option<usize>> =
-//                             serde_json::from_value(g["material"].values.take().into()).unwrap();
-//             let mut a2 = a.clone();
-//             for (i, x) in a.iter().enumerate() {
-//                 if x.is_some() {
-//                     let y2 = m_oldnew.get(&x.unwrap());
-//                     if y2.is_none() {
-//                         let l = m_oldnew.len();
-//                         m_oldnew.insert(x.unwrap(), l);
-//                         a2[i] = Some(l);
-//                     } else {
-//                         let y2 = y2.unwrap();
-//                         a2[i] = Some(*y2);
-//                     }
-//                 }
-//             }
-//             mat.values = Some(serde_json::to_value(&a2).unwrap());
-//         } else if g["type"] == "Solid" {
-//             for shell in g["boundaries"].as_array_mut().unwrap() {
-//                 for surface in shell.as_array_mut().unwrap() {
-//                     for ring in surface.as_array_mut().unwrap() {
-//                         for p in ring.as_array_mut().unwrap() {
-//                             let p1: i64 = p.as_i64().unwrap();
-//                             *p = Value::Number((p1 + offset as i64).into());
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
-fn collect_update_cjf_geometry_offset(geoms: &mut Vec<Value>, offset: usize) {
-    for g in geoms {
-        // TODO : add other Geometric primitives
-        if g["type"] == "MultiSurface" || g["type"] == "CompositeSurface" {
-            for surface in g["boundaries"].as_array_mut().unwrap() {
-                for ring in surface.as_array_mut().unwrap() {
-                    for p in ring.as_array_mut().unwrap() {
-                        let p1: i64 = p.as_i64().unwrap();
-                        *p = Value::Number((p1 + offset as i64).into());
-                    }
-                }
-            }
-        } else if g["type"] == "Solid" {
-            for shell in g["boundaries"].as_array_mut().unwrap() {
-                for surface in shell.as_array_mut().unwrap() {
-                    for ring in surface.as_array_mut().unwrap() {
-                        for p in ring.as_array_mut().unwrap() {
-                            let p1: i64 = p.as_i64().unwrap();
-                            *p = Value::Number((p1 + offset as i64).into());
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn collect_add_one_cjf_geometry(j: &mut Value, cjf: &mut Value, all_g_v: &mut Vec<Vec<i64>>) {
-    let offset = all_g_v.len();
-    for (_key, co) in cjf["CityObjects"].as_object_mut().unwrap() {
-        let x = co["geometry"].as_array_mut();
-        if x.is_some() {
-            for g in x.unwrap() {
-                // TODO : add other Geometric primitives
-                if g["type"] == "MultiSurface" || g["type"] == "CompositeSurface" {
-                    for surface in g["boundaries"].as_array_mut().unwrap() {
-                        for ring in surface.as_array_mut().unwrap() {
-                            for p in ring.as_array_mut().unwrap() {
-                                let p1: i64 = p.as_i64().unwrap();
-                                *p = Value::Number((p1 + offset as i64).into());
-                            }
-                        }
-                    }
-                } else if g["type"] == "Solid" {
-                    for shell in g["boundaries"].as_array_mut().unwrap() {
-                        for surface in shell.as_array_mut().unwrap() {
-                            for ring in surface.as_array_mut().unwrap() {
-                                for p in ring.as_array_mut().unwrap() {
-                                    let p1: i64 = p.as_i64().unwrap();
-                                    *p = Value::Number((p1 + offset as i64).into());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    //-- copy the offsetted CO
-    for (key, value) in cjf["CityObjects"].as_object_mut().unwrap() {
-        j["CityObjects"][key] = value.clone();
-    }
-    //-- add the new vertices
-    let mut vertices: Vec<Vec<i64>> = serde_json::from_value(cjf["vertices"].take()).unwrap();
-    all_g_v.append(&mut vertices);
 }
 
 fn cat_from_stdin() -> Result<(), MyError> {
@@ -869,16 +765,15 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
             let mut cjf = CityJSONFeature::new();
             let mut co2: CityObject = co.clone();
             let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut g_new_vi: Vec<usize> = Vec::new();
             let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
             let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
             let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
             match &mut co2.geometry {
                 Some(x) => {
                     for g in x.iter_mut() {
-                        g.update_geometry_vi(&mut g_vi_oldnew, &mut g_new_vi);
+                        g.update_geometry_boundaries(&mut g_vi_oldnew, 0);
                         g.update_material(&mut m_oldnew);
-                        g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
+                        g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
                     }
                 }
                 None => (),
@@ -894,9 +789,9 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
                 match &mut coc2.geometry {
                     Some(x) => {
                         for g in x.iter_mut() {
-                            g.update_geometry_vi(&mut g_vi_oldnew, &mut g_new_vi);
+                            g.update_geometry_boundaries(&mut g_vi_oldnew, 0);
                             g.update_material(&mut m_oldnew);
-                            g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
+                            g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
                         }
                     }
                     None => (),
@@ -905,9 +800,11 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
             }
 
             //-- "slice" geometry vertices
+            let allvertices = &cjj.vertices;
             let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
-            for v in &g_new_vi {
-                g_new_vertices.push(cjj.vertices[*v].clone());
+            g_new_vertices.resize(g_vi_oldnew.len(), vec![]);
+            for (old, new) in &g_vi_oldnew {
+                g_new_vertices[*new] = allvertices[*old].clone();
             }
             cjf.vertices = g_new_vertices;
 
