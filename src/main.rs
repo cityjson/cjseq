@@ -145,7 +145,6 @@ impl CityJSON {
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
         let g_offset = self.vertices.len();
-        println!("=>{:?}--{}", cjf.id, g_offset);
         let mut t_offset = 0;
         if let Some(cjf_app) = &cjf.appearance {
             // println!("{:?}", cjf_app);
@@ -277,7 +276,6 @@ struct Geometry {
 impl Geometry {
     fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>, offset: usize) {
         // TODO: GeometryInstance?
-        // let l2: usize = violdnew.len();
         if self.thetype == "MultiPoint" {
             let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
             let mut a2 = a.clone();
@@ -728,7 +726,7 @@ fn cat_from_stdin() -> Result<(), MyError> {
             let _ = cat(&cjj)?;
         }
         Err(error) => {
-            println!("Error: {}", error);
+            eprintln!("Error: {}", error);
         }
     }
     Ok(())
