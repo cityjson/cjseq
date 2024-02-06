@@ -307,9 +307,9 @@ impl Geometry {
                             // r.push(z);
                             let kk = violdnew.get(&zz);
                             if kk.is_none() {
-                                let l = violdnew.len() + offset;
+                                let l2 = violdnew.len() + offset;
                                 violdnew.insert(*zz, l);
-                                a2[i][j][k][l] = l;
+                                a2[i][j][k][l] = l2;
                             } else {
                                 let kk = kk.unwrap();
                                 a2[i][j][k][l] = *kk;
@@ -330,9 +330,9 @@ impl Geometry {
                             for (m, zzz) in zz.iter().enumerate() {
                                 let kk = violdnew.get(&zzz);
                                 if kk.is_none() {
-                                    let l = violdnew.len() + offset;
+                                    let l2 = violdnew.len() + offset;
                                     violdnew.insert(*zzz, l);
-                                    a2[i][j][k][l][m] = l;
+                                    a2[i][j][k][l][m] = l2;
                                 } else {
                                     let kk = kk.unwrap();
                                     a2[i][j][k][l][m] = *kk;
