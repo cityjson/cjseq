@@ -1,1 +1,3 @@
-# cjseq
+
+# cjseq: for converting CityJSON <-> CityJSONSeq
+
