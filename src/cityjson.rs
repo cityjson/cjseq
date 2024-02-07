@@ -18,7 +18,7 @@ pub struct CityJSON {
     pub appearance: Option<Appearance>,
     #[serde(rename = "geometry-templates")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub geometry_templates: Option<Value>,
+    pub geometry_templates: Option<GeometryTemplates>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Value>,
     #[serde(flatten)]
@@ -132,7 +132,6 @@ impl CityJSON {
         for (key, co) in &mut cjf.city_objects {
             //-- boundaries
             if let Some(ref mut geoms) = &mut co.geometry {
-                // TODO : add other Geometric primitives
                 for g in geoms.iter_mut() {
                     //-- boundaries
                     g.update_geometry_boundaries(&mut g_oldnew, g_offset);
@@ -542,6 +541,13 @@ struct Vertex {
     x: i64,
     y: i64,
     z: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GeometryTemplates {
+    pub templates: Vec<Geometry>,
+    #[serde(rename = "vertices-templates")]
+    pub vertices_templates: Value,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

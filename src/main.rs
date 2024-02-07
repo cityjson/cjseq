@@ -2,6 +2,7 @@ use crate::cityjson::Appearance;
 use crate::cityjson::CityJSON;
 use crate::cityjson::CityJSONFeature;
 use crate::cityjson::CityObject;
+use crate::cityjson::GeometryTemplates;
 use serde_json::{json, Value};
 use std::fmt;
 use std::fs::File;
@@ -175,7 +176,56 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
     }
 
     //-- first line: the CityJSON "metadata"
-    let cj1: CityJSON = cjj.get_empty_copy();
+    let mut cj1: CityJSON = cjj.get_empty_copy();
+    //-- if geometry-templates have material/textures then these need to be added to 1st line
+    match &cjj.geometry_templates {
+        Some(x) => {
+            let mut gts2: GeometryTemplates = x.clone();
+            let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+            for g in &mut gts2.templates {
+                g.update_material(&mut m_oldnew);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+            }
+            //-- "slice" materials
+            if cjj.appearance.is_some() {
+                let a = cjj.appearance.as_ref().unwrap();
+                let mut acjf: Appearance = Appearance::new();
+                acjf.default_theme_material = a.default_theme_material.clone();
+                acjf.default_theme_texture = a.default_theme_texture.clone();
+                if a.materials.is_some() {
+                    let am = a.materials.as_ref().unwrap();
+                    let mut mats2: Vec<Value> = Vec::new();
+                    mats2.resize(m_oldnew.len(), json!(null));
+                    for (old, new) in &m_oldnew {
+                        mats2[*new] = am[*old].clone();
+                    }
+                    acjf.materials = Some(mats2);
+                }
+                if a.textures.is_some() {
+                    let at = a.textures.as_ref().unwrap();
+                    let mut texs2: Vec<Value> = Vec::new();
+                    texs2.resize(t_oldnew.len(), json!(null));
+                    for (old, new) in &t_oldnew {
+                        texs2[*new] = at[*old].clone();
+                    }
+                    acjf.textures = Some(texs2);
+                }
+                if a.vertices_texture.is_some() {
+                    let atv = a.vertices_texture.as_ref().unwrap();
+                    let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
+                    t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+                    for (old, new) in &t_v_oldnew {
+                        t_new_vertices[*new] = atv[*old].clone();
+                    }
+                    acjf.vertices_texture = Some(t_new_vertices);
+                }
+                cj1.appearance = Some(acjf);
+            }
+        }
+        None => println!("no GT here"),
+    }
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
     //-- the other lines
