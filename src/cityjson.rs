@@ -366,7 +366,22 @@ impl Geometry {
                 }
                 self.boundaries = serde_json::to_value(&a2).unwrap();
             }
-            GeometryType::GeometryInstance => todo!(),
+            GeometryType::GeometryInstance => {
+                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    let kk = violdnew.get(&x);
+                    if kk.is_none() {
+                        let l = violdnew.len() + offset;
+                        violdnew.insert(*x, l);
+                        a2[i] = l;
+                    } else {
+                        let kk = kk.unwrap();
+                        a2[i] = *kk;
+                    }
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
         }
     }
     pub fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
