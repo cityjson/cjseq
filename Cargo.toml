@@ -1,7 +1,14 @@
 [package]
 name = "cjseq"
 version = "0.1.0"
+description = "Convertion CityJSON <=> CityJSONSeq"
+authors = ["Hugo Ledoux <h.ledoux@tudelft.nl>"]
 edition = "2021"
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/cityjson/cjseq"
+repository = "https://github.com/cityjson/cjseq"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
