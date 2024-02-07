@@ -49,7 +49,7 @@ fn main() {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
-            Command::new("cat").about("CityJSON=>CityJSONSeq").arg(
+            Command::new("cat").about("CityJSON => CityJSONSeq").arg(
                 arg!(
                     -f --file <FILE> "Read from file instead of stdin"
                 )
@@ -58,13 +58,15 @@ fn main() {
             ),
         )
         .subcommand(
-            Command::new("collect").about("CityJSONSeq=>CityJSON").arg(
-                arg!(
-                    -f --file <FILE> "Read from file instead of stdin"
-                )
-                .required(false)
-                .value_parser(value_parser!(PathBuf)),
-            ),
+            Command::new("collect")
+                .about("CityJSONSeq => CityJSON")
+                .arg(
+                    arg!(
+                        -f --file <FILE> "Read from file instead of stdin"
+                    )
+                    .required(false)
+                    .value_parser(value_parser!(PathBuf)),
+                ),
         )
         .get_matches();
 
@@ -121,9 +123,6 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let br = BufReader::new(f);
     let mut cjj: CityJSON = CityJSON::new();
-    // let mut j: Value = json!(null);
-    // let mut all_g_v: Vec<Vec<i64>> = Vec::new();
-    // let mut all_app: Appearance = Appearance::new();
     for (i, line) in br.lines().enumerate() {
         match &line {
             Ok(l) => {
