@@ -241,7 +241,6 @@ pub struct Geometry {
     pub thetype: GeometryType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lod: Option<String>,
-    // pub lod: Value,
     pub boundaries: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantics: Option<Value>,
