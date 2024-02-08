@@ -224,7 +224,7 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
                 cj1.appearance = Some(acjf);
             }
         }
-        None => println!("no GT here"),
+        None => (),
     }
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
 
@@ -241,7 +241,7 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
             match &mut co2.geometry {
                 Some(x) => {
                     for g in x.iter_mut() {
-                        g.update_geometry_boundaries(&mut g_vi_oldnew, 0);
+                        g.update_geometry_boundaries(&mut g_vi_oldnew);
                         g.update_material(&mut m_oldnew);
                         g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
                     }
@@ -259,7 +259,7 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
                 match &mut coc2.geometry {
                     Some(x) => {
                         for g in x.iter_mut() {
-                            g.update_geometry_boundaries(&mut g_vi_oldnew, 0);
+                            g.update_geometry_boundaries(&mut g_vi_oldnew);
                             g.update_material(&mut m_oldnew);
                             g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
                         }

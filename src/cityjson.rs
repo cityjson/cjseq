@@ -103,7 +103,7 @@ impl CityJSON {
         re
     }
     pub fn add_one_cjf(&mut self, mut cjf: CityJSONFeature) {
-        let mut g_oldnew: HashMap<usize, usize> = HashMap::new();
+        // let mut g_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
@@ -133,7 +133,8 @@ impl CityJSON {
             if let Some(ref mut geoms) = &mut co.geometry {
                 for g in geoms.iter_mut() {
                     //-- boundaries
-                    g.update_geometry_boundaries(&mut g_oldnew, g_offset);
+                    g.offset_geometry_boundaries(g_offset);
+                    // g.update_geometry_boundaries(&mut g_oldnew, g_offset);
                     //-- material
                     g.update_material(&mut m_oldnew);
                     //-- texture
@@ -254,11 +255,7 @@ pub struct Geometry {
     pub transformation_matrix: Option<Value>,
 }
 impl Geometry {
-    pub fn update_geometry_boundaries(
-        &mut self,
-        violdnew: &mut HashMap<usize, usize>,
-        offset: usize,
-    ) {
+    pub fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
         match self.thetype {
             GeometryType::MultiPoint => {
                 let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
@@ -266,7 +263,7 @@ impl Geometry {
                 for (i, x) in a.iter().enumerate() {
                     let kk = violdnew.get(&x);
                     if kk.is_none() {
-                        let l = violdnew.len() + offset;
+                        let l = violdnew.len();
                         violdnew.insert(*x, l);
                         a2[i] = l;
                     } else {
@@ -284,7 +281,7 @@ impl Geometry {
                         // r.push(z);
                         let kk = violdnew.get(&y);
                         if kk.is_none() {
-                            let l = violdnew.len() + offset;
+                            let l = violdnew.len();
                             violdnew.insert(*y, l);
                             a2[i][j] = l;
                         } else {
@@ -304,7 +301,7 @@ impl Geometry {
                         for (k, z) in y.iter().enumerate() {
                             let kk = violdnew.get(&z);
                             if kk.is_none() {
-                                let l = violdnew.len() + offset;
+                                let l = violdnew.len();
                                 violdnew.insert(*z, l);
                                 a2[i][j][k] = l;
                             } else {
@@ -326,7 +323,7 @@ impl Geometry {
                             for (l, zz) in z.iter().enumerate() {
                                 let kk = violdnew.get(&zz);
                                 if kk.is_none() {
-                                    let l2 = violdnew.len() + offset;
+                                    let l2 = violdnew.len();
                                     violdnew.insert(*zz, l2);
                                     a2[i][j][k][l] = l2;
                                 } else {
@@ -350,7 +347,7 @@ impl Geometry {
                                 for (m, zzz) in zz.iter().enumerate() {
                                     let kk = violdnew.get(&zzz);
                                     if kk.is_none() {
-                                        let l2 = violdnew.len() + offset;
+                                        let l2 = violdnew.len();
                                         violdnew.insert(*zzz, l2);
                                         a2[i][j][k][l][m] = l2;
                                     } else {
@@ -370,7 +367,7 @@ impl Geometry {
                 for (i, x) in a.iter().enumerate() {
                     let kk = violdnew.get(&x);
                     if kk.is_none() {
-                        let l = violdnew.len() + offset;
+                        let l = violdnew.len();
                         violdnew.insert(*x, l);
                         a2[i] = l;
                     } else {
@@ -382,6 +379,84 @@ impl Geometry {
             }
         }
     }
+
+    pub fn offset_geometry_boundaries(&mut self, offset: usize) {
+        match self.thetype {
+            GeometryType::MultiPoint => {
+                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    a2[i] = *x + offset;
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
+            GeometryType::MultiLineString => {
+                let a: Vec<Vec<usize>> = serde_json::from_value(self.boundaries.take()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    for (j, y) in x.iter().enumerate() {
+                        // r.push(z);
+                        a2[i][j] = *y + offset;
+                    }
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
+            GeometryType::MultiSurface | GeometryType::CompositeSurface => {
+                let a: Vec<Vec<Vec<usize>>> =
+                    serde_json::from_value(self.boundaries.take()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    for (j, y) in x.iter().enumerate() {
+                        for (k, z) in y.iter().enumerate() {
+                            a2[i][j][k] = *z + offset;
+                        }
+                    }
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
+            GeometryType::Solid => {
+                let a: Vec<Vec<Vec<Vec<usize>>>> =
+                    serde_json::from_value(self.boundaries.take()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    for (j, y) in x.iter().enumerate() {
+                        for (k, z) in y.iter().enumerate() {
+                            for (l, zz) in z.iter().enumerate() {
+                                a2[i][j][k][l] = *zz + offset;
+                            }
+                        }
+                    }
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
+            GeometryType::MultiSolid | GeometryType::CompositeSolid => {
+                let a: Vec<Vec<Vec<Vec<Vec<usize>>>>> =
+                    serde_json::from_value(self.boundaries.take()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    for (j, y) in x.iter().enumerate() {
+                        for (k, z) in y.iter().enumerate() {
+                            for (l, zz) in z.iter().enumerate() {
+                                for (m, zzz) in zz.iter().enumerate() {
+                                    a2[i][j][k][l][m] = *zzz + offset;
+                                }
+                            }
+                        }
+                    }
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
+            GeometryType::GeometryInstance => {
+                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
+                let mut a2 = a.clone();
+                for (i, x) in a.iter().enumerate() {
+                    a2[i] = *x + offset;
+                }
+                self.boundaries = serde_json::to_value(&a2).unwrap();
+            }
+        }
+    }
+
     pub fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
         match &mut self.material {
             Some(x) => {
