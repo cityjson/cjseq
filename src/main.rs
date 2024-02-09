@@ -116,6 +116,7 @@ fn collect_from_stdin() -> Result<(), MyError> {
             cjj.add_one_cjf(cjf);
         }
     }
+    cjj.remove_duplicate_vertices();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }
@@ -137,6 +138,7 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
             Err(error) => eprintln!("Error reading line: {}", error),
         }
     }
+    cjj.remove_duplicate_vertices();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }

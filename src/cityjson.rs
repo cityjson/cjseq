@@ -147,6 +147,41 @@ impl CityJSON {
         //-- add the new vertices
         self.add_vertices(cjf.vertices.clone());
     }
+
+    pub fn remove_duplicate_vertices(&mut self) {
+        // let totalinput = self.vertices.len();
+        let mut h: HashMap<String, usize> = HashMap::new();
+        let mut newids: HashMap<usize, usize> = HashMap::new();
+        let mut newvertices: Vec<Vec<i64>> = Vec::new();
+        for (i, v) in self.vertices.iter().enumerate() {
+            // println!("{:?}", v);
+            let k = format!("{} {} {}", v[0], v[1], v[2]);
+            match h.get(&k) {
+                Some(x) => {
+                    let _ = newids.insert(i, *x);
+                }
+                None => {
+                    newids.insert(i, newvertices.len());
+                    h.insert(k.clone(), newvertices.len());
+                    newvertices.push(v.clone());
+                }
+            }
+        }
+        //-- update indices
+        let cos = &mut self.city_objects;
+        for (_key, co) in cos.iter_mut() {
+            match &mut co.geometry {
+                Some(x) => {
+                    for g in x.iter_mut() {
+                        g.update_geometry_boundaries(&mut newids);
+                    }
+                }
+                None => (),
+            }
+        }
+        //-- replace the vertices, innit?
+        self.vertices = newvertices;
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
