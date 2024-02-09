@@ -1,6 +1,6 @@
 [package]
 name = "cjseq"
-version = "0.1.0"
+version = "0.2.0"
 description = "Convertion CityJSON <=> CityJSONSeq"
 authors = ["Hugo Ledoux <h.ledoux@tudelft.nl>"]
 edition = "2021"
