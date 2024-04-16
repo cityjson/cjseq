@@ -636,6 +636,44 @@ impl Geometry {
                             }
                             tex.values = Some(serde_json::to_value(&a2).unwrap());
                         }
+                        GeometryType::Solid => {
+                            let a: Vec<Vec<Vec<Vec<Option<usize>>>>> =
+                                serde_json::from_value(tex.values.take().into()).unwrap();
+                            let mut a2 = a.clone();
+                            for (i, x) in a.iter().enumerate() {
+                                for (j, y) in x.iter().enumerate() {
+                                    for (k, z) in y.iter().enumerate() {
+                                        for (l, zz) in z.iter().enumerate() {
+                                            if zz.is_some() {
+                                                let thevalue: usize = zz.unwrap();
+                                                if l == 0 {
+                                                    let y2 = t_oldnew.get(&thevalue);
+                                                    if y2.is_none() {
+                                                        let l2 = t_oldnew.len();
+                                                        t_oldnew.insert(thevalue, l2);
+                                                        a2[i][j][k][l] = Some(l2);
+                                                    } else {
+                                                        let y2 = y2.unwrap();
+                                                        a2[i][j][k][l] = Some(*y2);
+                                                    }
+                                                } else {
+                                                    let y2 = t_v_oldnew.get(&thevalue);
+                                                    if y2.is_none() {
+                                                        let l2 = t_v_oldnew.len();
+                                                        t_v_oldnew.insert(thevalue, l2 + offset);
+                                                        a2[i][j][k][l] = Some(l2);
+                                                    } else {
+                                                        let y2 = y2.unwrap();
+                                                        a2[i][j][k][l] = Some(*y2);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            tex.values = Some(serde_json::to_value(&a2).unwrap());
+                        }
                         _ => todo!(),
                     }
                 }
