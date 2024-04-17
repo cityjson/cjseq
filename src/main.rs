@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 
 extern crate clap;
 
+use rand::Rng;
 use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
@@ -40,6 +41,15 @@ enum Commands {
         /// CityJSON input file
         #[arg(short, long)]
         file: Option<PathBuf>,
+    },
+    /// Filter a CityJSONSeq
+    Filter {
+        /// 1/X chances of a given feature be kept
+        #[arg(short, long, value_parser = clap::value_parser!(u32).range(1..), group = "exclusif")]
+        thin: Option<u32>,
+        /// Keep only the specific CityObjects
+        #[arg(short, long, group = "exclusif")]
+        cotype: Option<String>,
     },
 }
 
@@ -104,7 +114,55 @@ fn main() {
                 }
             }
         },
+        //-- filter
+        Commands::Filter { thin, cotype } => {
+            if thin.is_some() {
+                if let Err(e) = filter_thin(thin.unwrap()) {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+            if cotype.is_some() {
+                if let Err(e) = filter_cotype(cotype.clone().unwrap()) {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
+}
+
+fn filter_thin(thinfactor: u32) -> Result<(), MyError> {
+    let stdin = std::io::stdin();
+    let mut rng = rand::thread_rng();
+    for (i, line) in stdin.lock().lines().enumerate() {
+        let l = line.unwrap();
+        if i == 0 {
+            io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+        } else {
+            let r: u32 = rng.gen_range(1..=thinfactor);
+            if r == 1 {
+                io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn filter_cotype(cotype: String) -> Result<(), MyError> {
+    let stdin = std::io::stdin();
+    for (i, line) in stdin.lock().lines().enumerate() {
+        let l = line.unwrap();
+        if i == 0 {
+            io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+        } else {
+            let cjf: CityJSONFeature = serde_json::from_str(&l)?;
+            if cjf.city_objects[&cjf.id].thetype == cotype {
+                io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn collect_from_stdin() -> Result<(), MyError> {
