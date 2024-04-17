@@ -4,6 +4,9 @@ use crate::cityjson::CityJSONFeature;
 use crate::cityjson::CityObject;
 use crate::cityjson::GeometryTemplates;
 use serde_json::{json, Value};
+
+extern crate clap;
+
 use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
@@ -13,9 +16,32 @@ use std::path::PathBuf;
 
 use std::collections::HashMap;
 
-use clap::{arg, command, value_parser, Command};
-
 mod cityjson;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(version, about = "Create/process/modify CityJSONSeq files", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// CityJSONSeq ==> CityJSON
+    Cat {
+        /// CityJSONSeq input file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
+    /// CityJSON ==> CityJSONSeq
+    Collect {
+        /// CityJSON input file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
+}
 
 #[derive(Debug)]
 enum MyError {
@@ -45,34 +71,11 @@ impl From<std::io::Error> for MyError {
 }
 
 fn main() {
-    let matches = command!()
-        .propagate_version(true)
-        .subcommand_required(true)
-        .arg_required_else_help(true)
-        .subcommand(
-            Command::new("cat").about("CityJSON => CityJSONSeq").arg(
-                arg!(
-                    -f --file <FILE> "Read from file instead of stdin"
-                )
-                .required(false)
-                .value_parser(value_parser!(PathBuf)),
-            ),
-        )
-        .subcommand(
-            Command::new("collect")
-                .about("CityJSONSeq => CityJSON")
-                .arg(
-                    arg!(
-                        -f --file <FILE> "Read from file instead of stdin"
-                    )
-                    .required(false)
-                    .value_parser(value_parser!(PathBuf)),
-                ),
-        )
-        .get_matches();
+    let cli = Cli::parse();
 
-    match matches.subcommand() {
-        Some(("cat", sub_matches)) => match sub_matches.get_one::<PathBuf>("file") {
+    match &cli.command {
+        //-- cat
+        Commands::Cat { file } => match file {
             Some(x) => {
                 if let Err(e) = cat_from_file(x) {
                     eprintln!("{e}");
@@ -86,7 +89,8 @@ fn main() {
                 }
             }
         },
-        Some(("collect", sub_matches)) => match sub_matches.get_one::<PathBuf>("file") {
+        //-- collect
+        Commands::Collect { file } => match file {
             Some(x) => {
                 if let Err(e) = collect_from_file(x) {
                     eprintln!("{e}");
@@ -100,7 +104,6 @@ fn main() {
                 }
             }
         },
-        _ => (),
     }
 }
 
