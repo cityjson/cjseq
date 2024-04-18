@@ -1,5 +1,12 @@
 # Changelog
 
+
+## [0.3.0] - 2024-04-18
+### Modified
+- changed many names 
+### Added
+- new subcommand: filter
+
 ## [0.2.0] - 2024-02-09
 ### Modified
 - fix bug with wrong indexing with BuildingPart and collect
