@@ -1,9 +1,9 @@
 
-# cjseq: conversion CityJSON <-> CityJSONSeq
+# cjseq
 
 [![crates.io](https://img.shields.io/crates/v/cjseq.svg)](https://crates.io/crates/cjseq)
 
-A program to convert [CityJSON](https://cityjson.org) datasets to [CityJSONSeq](https://cityjson.org/cityjsonseq), and vice-versa.
+A program to create/process/modify [CityJSONSeq](https://cityjson.org/cityjsonseq) files, and convert [CityJSON](https://cityjson.org).
 
 ## Installation/compilation
 
@@ -32,8 +32,11 @@ It always outputs to stdout the results (either a CityJSON object or a CityJSONS
 
 ### CityJSONSeq => CityJSON
 
-`cat ./data/3dbag_b2.city.jsons cjseq collect > 3dbag_b2.city.json` 
+`cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json` 
 
+### filter CityJSONSeq 
+
+`cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset.city.jsonl`
 
 ## Input constraints
 
