@@ -7,7 +7,7 @@ pub struct CityJSON {
     #[serde(rename = "type")]
     pub thetype: String,
     pub version: String,
-    pub transform: Value,
+    pub transform: Transform,
     #[serde(rename = "CityObjects")]
     pub city_objects: HashMap<String, CityObject>,
     pub vertices: Vec<Vec<i64>>,
@@ -27,12 +27,7 @@ impl CityJSON {
     pub fn new() -> Self {
         let co: HashMap<String, CityObject> = HashMap::new();
         let v: Vec<Vec<i64>> = Vec::new();
-        let tr = json!({
-          "transform": {
-            "scale": [1.0, 1.0, 1.0],
-            "translate": [0.0, 0.0, 0.0]
-          },
-        });
+        let tr = Transform::new();
         CityJSON {
             thetype: "CityJSON".to_string(),
             version: "2.0".to_string(),
@@ -209,6 +204,18 @@ impl CityJSONFeature {
     }
     pub fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id, co);
+    }
+    pub fn centroid(&self) -> Vec<f64> {
+        let mut totals: Vec<f64> = vec![0., 0., 0.];
+        for v in &self.vertices {
+            for i in 0..3 {
+                totals[i] += v[i] as f64;
+            }
+        }
+        for i in 0..3 {
+            totals[i] /= self.vertices.len() as f64;
+        }
+        return totals;
     }
 }
 
@@ -688,6 +695,20 @@ struct Vertex {
     x: i64,
     y: i64,
     z: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Transform {
+    pub scale: Vec<f64>,
+    pub translate: Vec<f64>,
+}
+impl Transform {
+    pub fn new() -> Self {
+        Transform {
+            scale: vec![1.0, 1.0, 1.0],
+            translate: vec![0., 0., 0.],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
