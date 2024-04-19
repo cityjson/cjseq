@@ -177,6 +177,31 @@ impl CityJSON {
         //-- replace the vertices, innit?
         self.vertices = newvertices;
     }
+
+    pub fn retransform(&mut self) {
+        let mut newvertices: Vec<Vec<i64>> = Vec::new();
+        let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];
+        //-- find min-xyz
+        for v in &self.vertices {
+            for i in 0..3 {
+                if v[i] < mins[i] {
+                    mins[i] = v[i];
+                }
+            }
+        }
+        //-- subtract the mins from each vertex
+        for v in &self.vertices {
+            let v: Vec<i64> = vec![v[0] - mins[0], v[1] - mins[1], v[2] - mins[2]];
+            newvertices.push(v);
+        }
+        //-- replace the vertices, innit?
+        self.vertices = newvertices;
+        //-- update the transform/translate
+        let ttx = (mins[0] as f64 * self.transform.scale[0]) + self.transform.translate[0];
+        let tty = (mins[1] as f64 * self.transform.scale[1]) + self.transform.translate[1];
+        let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
+        self.transform.translate = vec![ttx, tty, ttz];
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
