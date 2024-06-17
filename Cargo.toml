@@ -1,6 +1,6 @@
 [package]
 name = "cjseq"
-version = "0.3.0"
+version = "0.3.1"
 description = "Create/process/modify CityJSONSeq"
 authors = ["Hugo Ledoux <h.ledoux@tudelft.nl>"]
 edition = "2021"
