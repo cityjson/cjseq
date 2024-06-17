@@ -45,20 +45,26 @@ enum Commands {
     },
     /// Filter a CityJSONSeq
     Filter {
-        /// bbox: minx miny maxx maxy
-        #[arg(long, value_delimiter = ' ', num_args = 4, group = "exclusive")]
+        /// Bounding box filter
+        #[arg(long, value_names = &["minx", "miny", "maxx", "maxy"], value_delimiter = ' ', num_args = 4, group = "exclusive")]
         bbox: Option<Vec<f64>>,
         /// Keep only the CityObjects of this type
         #[arg(long, group = "exclusive")]
         cotype: Option<String>,
-        // Excludes the selection, thus delete the selected city object(s).
+        /// Excludes the selection, thus delete the selected city object(s)
         #[arg(long)]
         exclude: bool,
-        /// x y radius
-        #[arg(long, value_delimiter = ' ', num_args = 3, group = "exclusive")]
+        /// Circle filter: centre + radius
+        #[arg(
+            long,
+            value_names = &["x", "y", "radius"],
+            value_delimiter = ' ',
+            num_args = 3,
+            group = "exclusive"
+        )]
         radius: Option<Vec<f64>>,
-        /// 1/X chances of a given feature be kept
-        #[arg(long, value_parser = clap::value_parser!(u32).range(1..), group = "exclusive")]
+        /// 1/X chances of a given feature being kept
+        #[arg(long, value_name = "X", value_parser = clap::value_parser!(u32).range(1..), group = "exclusive")]
         random: Option<u32>,
     },
 }
