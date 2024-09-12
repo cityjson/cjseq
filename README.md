@@ -3,18 +3,24 @@
 
 [![crates.io](https://img.shields.io/crates/v/cjseq.svg)](https://crates.io/crates/cjseq)
 
-`cjseq` is a program for creating, processing, and modifying [CityJSONSeq](https://cityjson.org/cityjsonseq) files, as well as converting [CityJSON](https://cityjson.org) files to it.
+`cjseq` is a Rust libray+binary for creating, processing, and modifying [CityJSONSeq](https://cityjson.org/cityjsonseq) files, as well as converting to/from [CityJSON](https://cityjson.org).
 
 ## Installation
 
-### Installing the binaries
+### Installing the binary
 
-1. Install the [Rust compiler](https://www.rust-lang.org/learn/get-started).
-2. Run `cargo install cjseq`.
+1. Install the [Rust compiler](https://www.rust-lang.org/learn/get-started)
+2. Run `cargo install cjseq`
+3. Then a binary called `cjseq` is installed system-wide
+
+### Installing the library
+
+1. Install the [Rust compiler](https://www.rust-lang.org/learn/get-started)
+2. Run `cargo install cjseq`
 
 ### Compiling the project
 
-1. Install the [Rust compiler](https://www.rust-lang.org/learn/get-started).
+1. Install the [Rust compiler](https://www.rust-lang.org/learn/get-started)
 2. Clone the repository: `git clone https://github.com/cityjson/cjseq.git`
 3. Build the project: `cargo build --release`
 4. Run the program: `./target/release/cjseq --help`
@@ -53,4 +59,4 @@ cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json
 ## Input constraints
 
   1. the input CityJSON/Seq must be v1.1 or v2.0 (v1.0 will panic).
-  2. the input JSON but be CityJSON schema-valid, use [cjval](https://github.com/cityjson/cjval) to validate.
+  2. the input JSON must be CityJSON schema-valid, use [cjval](https://github.com/cityjson/cjval) to validate.
