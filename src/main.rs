@@ -27,13 +27,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// CityJSONSeq ==> CityJSON
+    /// CityJSON ==> CityJSONSeq
     Cat {
         /// CityJSONSeq input file
         #[arg(short, long)]
         file: Option<PathBuf>,
     },
-    /// CityJSON ==> CityJSONSeq
+    /// CityJSONSeq ==> CityJSON
     Collect {
         /// CityJSON input file
         #[arg(short, long)]
