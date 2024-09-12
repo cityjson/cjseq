@@ -1,26 +1,22 @@
-use crate::cityjson::Appearance;
-use crate::cityjson::CityJSON;
-use crate::cityjson::CityJSONFeature;
-use crate::cityjson::CityObject;
-use crate::cityjson::GeometryTemplates;
-use crate::cityjson::Transform;
+use cjseq::Appearance;
+use cjseq::CityJSON;
+use cjseq::CityJSONFeature;
+use cjseq::CityObject;
+use cjseq::GeometryTemplates;
+use cjseq::Transform;
 use serde_json::{json, Value};
 
 extern crate clap;
+use clap::{Parser, Subcommand};
 
 use rand::Rng;
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-
-use std::collections::HashMap;
-
-mod cityjson;
-
-use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(version, about = "Create/process/modify CityJSONSeq files", long_about = None)]
