@@ -1,17 +1,10 @@
-use cjseq::Appearance;
 use cjseq::CityJSON;
 use cjseq::CityJSONFeature;
-use cjseq::CityObject;
-use cjseq::GeometryTemplates;
-use cjseq::Transform;
-
-use serde_json::{json, Value};
 
 extern crate clap;
 use clap::{Parser, Subcommand};
 
 use rand::Rng;
-use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
