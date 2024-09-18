@@ -143,7 +143,6 @@ impl CityJSON {
     }
     pub fn cat_feature(&self, i: usize) -> Option<CityJSONFeature> {
         let i2 = self.sorted_ids.get(i);
-        // println!("{:?}", i2);
         if i2.is_none() {
             return None;
         }
@@ -151,7 +150,6 @@ impl CityJSON {
         if obj.is_none() {
             return None;
         }
-        // println!("{:?}", obj);
         let co = obj.unwrap();
         //-- the other lines
         let mut cjf = CityJSONFeature::new();
@@ -189,7 +187,6 @@ impl CityJSON {
             }
             cjf.add_co(childkey.clone(), coc2);
         }
-
         //-- "slice" geometry vertices
         let allvertices = &self.vertices;
         let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
@@ -198,7 +195,6 @@ impl CityJSON {
             g_new_vertices[*new] = allvertices[*old].clone();
         }
         cjf.vertices = g_new_vertices;
-
         //-- "slice" materials
         if self.appearance.is_some() {
             let a = self.appearance.as_ref().unwrap();
@@ -235,20 +231,15 @@ impl CityJSON {
             cjf.appearance = Some(acjf);
         }
         Some(cjf)
-        // io::stdout()
-        //     .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
     }
     pub fn add_one_cjf(&mut self, mut cjf: CityJSONFeature) {
-        // let mut g_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
         let g_offset = self.vertices.len();
         let mut t_offset = 0;
         if let Some(cjf_app) = &cjf.appearance {
-            // println!("{:?}", cjf_app);
             if let Some(cjf_mat) = &cjf_app.materials {
-                // println!("{:?}", cjf_mat);
                 for (i, m) in cjf_mat.iter().enumerate() {
                     m_oldnew.insert(i, self.add_material(m.clone()));
                 }
