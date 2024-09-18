@@ -207,19 +207,18 @@ fn filter_cotype(exclude: bool, cotype: String) -> Result<(), MyError> {
 
 fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<(), MyError> {
     let stdin = std::io::stdin();
-    let mut transform: Transform = Transform::new();
+    let mut cj: CityJSON = CityJSON::new();
     for (i, line) in stdin.lock().lines().enumerate() {
         let mut w: bool = false;
         let l = line.unwrap();
         if i == 0 {
             io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-            let cj: CityJSON = serde_json::from_str(&l)?;
-            transform = cj.transform;
+            cj = serde_json::from_str(&l)?;
         } else {
             let cjf: CityJSONFeature = serde_json::from_str(&l)?;
             let ci = cjf.centroid();
-            let cx = (ci[0] * transform.scale[0]) + transform.translate[0];
-            let cy = (ci[1] * transform.scale[1]) + transform.translate[1];
+            let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
+            let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
             if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
                 w = true;
             }
@@ -233,19 +232,18 @@ fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<(), MyError> {
 
 fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<(), MyError> {
     let stdin = std::io::stdin();
-    let mut transform: Transform = Transform::new();
+    let mut cj: CityJSON = CityJSON::new();
     for (i, line) in stdin.lock().lines().enumerate() {
         let mut w: bool = false;
         let l = line.unwrap();
         if i == 0 {
             io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-            let cj: CityJSON = serde_json::from_str(&l)?;
-            transform = cj.transform;
+            cj = serde_json::from_str(&l)?;
         } else {
             let cjf: CityJSONFeature = serde_json::from_str(&l)?;
             let ci = cjf.centroid();
-            let cx = (ci[0] * transform.scale[0]) + transform.translate[0];
-            let cy = (ci[1] * transform.scale[1]) + transform.translate[1];
+            let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
+            let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
             let d2 = (cx - x).powf(2.0) + (cy - y).powf(2.0);
             if d2 <= (r * r) {
                 w = true;
