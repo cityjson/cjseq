@@ -194,7 +194,7 @@ fn filter_cotype(exclude: bool, cotype: String) -> Result<(), MyError> {
             io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
         } else {
             let cjf: CityJSONFeature = serde_json::from_str(&l)?;
-            if cjf.city_objects[&cjf.id].thetype == cotype {
+            if cjf.city_objects[&cjf.id].get_type() == cotype {
                 w = true;
             }
             if (w == true && !exclude) || (w == false && exclude) {

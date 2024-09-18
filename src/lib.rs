@@ -28,7 +28,7 @@ pub struct CityJSON {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Value>,
     #[serde(flatten)]
-    other: serde_json::Value,
+    pub other: serde_json::Value,
     #[serde(skip)]
     sorted_ids: Vec<String>,
 }
@@ -442,7 +442,10 @@ pub struct CityObject {
 }
 
 impl CityObject {
-    pub fn is_toplevel(&self) -> bool {
+    pub fn get_type(&self) -> String {
+        self.thetype.clone()
+    }
+    fn is_toplevel(&self) -> bool {
         match &self.parents {
             Some(x) => {
                 if x.is_empty() {
@@ -454,7 +457,7 @@ impl CityObject {
             None => return true,
         }
     }
-    pub fn get_children_keys(&self) -> Vec<String> {
+    fn get_children_keys(&self) -> Vec<String> {
         let mut re: Vec<String> = Vec::new();
         match &self.children {
             Some(x) => {
@@ -483,24 +486,24 @@ pub enum GeometryType {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Geometry {
     #[serde(rename = "type")]
-    thetype: GeometryType,
+    pub thetype: GeometryType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    lod: Option<String>,
-    boundaries: Value,
+    pub lod: Option<String>,
+    pub boundaries: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
-    semantics: Option<Value>,
+    pub semantics: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    material: Option<HashMap<String, Material>>,
+    pub material: Option<HashMap<String, Material>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    texture: Option<HashMap<String, Texture>>,
+    pub texture: Option<HashMap<String, Texture>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    template: Option<usize>,
+    pub template: Option<usize>,
     #[serde(rename = "transformationMatrix")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    transformation_matrix: Option<Value>,
+    pub transformation_matrix: Option<Value>,
 }
 impl Geometry {
-    pub fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
+    fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
         match self.thetype {
             GeometryType::MultiPoint => {
                 let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
@@ -625,7 +628,7 @@ impl Geometry {
         }
     }
 
-    pub fn offset_geometry_boundaries(&mut self, offset: usize) {
+    fn offset_geometry_boundaries(&mut self, offset: usize) {
         match self.thetype {
             GeometryType::MultiPoint => {
                 let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
@@ -702,7 +705,7 @@ impl Geometry {
         }
     }
 
-    pub fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
+    fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
         match &mut self.material {
             Some(x) => {
                 for (_key, mat) in &mut *x {
@@ -800,7 +803,7 @@ impl Geometry {
             None => (),
         }
     }
-    pub fn update_texture(
+    fn update_texture(
         &mut self,
         t_oldnew: &mut HashMap<usize, usize>,
         t_v_oldnew: &mut HashMap<usize, usize>,
@@ -906,7 +909,7 @@ pub struct Transform {
     pub translate: Vec<f64>,
 }
 impl Transform {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Transform {
             scale: vec![1.0, 1.0, 1.0],
             translate: vec![0., 0., 0.],
@@ -952,7 +955,7 @@ pub struct Appearance {
     pub default_theme_material: Option<String>,
 }
 impl Appearance {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Appearance {
             materials: None,
             textures: None,
@@ -961,7 +964,7 @@ impl Appearance {
             default_theme_material: None,
         }
     }
-    pub fn add_material(&mut self, jm: Value) -> usize {
+    fn add_material(&mut self, jm: Value) -> usize {
         let re = match &mut self.materials {
             Some(x) => match x.iter().position(|e| *e == jm) {
                 Some(y) => y,
@@ -979,7 +982,7 @@ impl Appearance {
         };
         re
     }
-    pub fn add_texture(&mut self, jm: Value) -> usize {
+    fn add_texture(&mut self, jm: Value) -> usize {
         let re = match &mut self.textures {
             Some(x) => match x.iter().position(|e| *e == jm) {
                 Some(y) => y,
@@ -997,7 +1000,7 @@ impl Appearance {
         };
         re
     }
-    pub fn add_vertices_texture(&mut self, mut vs: Vec<Vec<f64>>) {
+    fn add_vertices_texture(&mut self, mut vs: Vec<Vec<f64>>) {
         match &mut self.vertices_texture {
             Some(x) => {
                 x.append(&mut vs);
