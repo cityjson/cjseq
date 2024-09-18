@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Error, Value};
 use std::collections::HashMap;
 
+pub enum SortingStrategy {
+    Random,
+    Alphabetical,
+    Morton, //-- TODO implement Morton sorting
+    Hilbert,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CityJSON {
     #[serde(rename = "type")]
@@ -45,8 +52,7 @@ impl CityJSON {
         }
     }
     pub fn from_str(s: &str) -> Result<Self, Error> {
-        let mut cjj: CityJSON = serde_json::from_str(s)?;
-        cjj.sorted_ids = cjj.city_objects.keys().cloned().collect();
+        let cjj: CityJSON = serde_json::from_str(s)?;
         Ok(cjj)
     }
     pub fn get_empty_copy(&self) -> Self {
@@ -335,10 +341,28 @@ impl CityJSON {
         let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
         self.transform.translate = vec![ttx, tty, ttz];
     }
-    fn add_co(&mut self, id: String, co: CityObject) {
-        if co.is_toplevel() {
-            self.sorted_ids.push(id.clone());
+    pub fn sort_features(&mut self, ss: SortingStrategy) {
+        self.sorted_ids.clear();
+        match ss {
+            SortingStrategy::Random => {
+                for (key, co) in &self.city_objects {
+                    if co.is_toplevel() {
+                        self.sorted_ids.push(key.clone());
+                    }
+                }
+            }
+            SortingStrategy::Alphabetical => {
+                for (key, co) in &self.city_objects {
+                    if co.is_toplevel() {
+                        self.sorted_ids.push(key.clone());
+                    }
+                }
+                self.sorted_ids.sort();
+            }
+            _ => todo!(),
         }
+    }
+    fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id.clone(), co);
     }
     fn add_vertices(&mut self, mut v: Vec<Vec<i64>>) {

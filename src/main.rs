@@ -302,8 +302,8 @@ fn cat_from_stdin() -> Result<(), MyError> {
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
-            let cjj: CityJSON = CityJSON::from_str(&input)?;
-            let _ = cat(&cjj)?;
+            let mut cjj: CityJSON = CityJSON::from_str(&input)?;
+            let _ = cat(&mut cjj)?;
         }
         Err(error) => {
             eprintln!("Error: {}", error);
@@ -317,12 +317,12 @@ fn cat_from_file(file: &PathBuf) -> Result<(), MyError> {
     let mut br = BufReader::new(f);
     let mut json_content = String::new();
     br.read_to_string(&mut json_content)?;
-    let cjj: CityJSON = CityJSON::from_str(&json_content)?;
-    cat(&cjj)?;
+    let mut cjj: CityJSON = CityJSON::from_str(&json_content)?;
+    cat(&mut cjj)?;
     Ok(())
 }
 
-fn cat(cjj: &CityJSON) -> Result<(), MyError> {
+fn cat(cjj: &mut CityJSON) -> Result<(), MyError> {
     if cjj.thetype != "CityJSON" {
         return Err(MyError::CityJsonError(
             "Input file not CityJSON.".to_string(),
@@ -333,7 +333,7 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
             "Input file not CityJSON v1.1 nor v2.0.".to_string(),
         ));
     }
-
+    cjj.sort_features(cjseq::SortingStrategy::Alphabetical);
     //-- first line: the CityJSON "metadata"
     let cj1 = cjj.cat_metadata();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
