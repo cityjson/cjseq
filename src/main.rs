@@ -4,6 +4,7 @@ use cjseq::CityJSONFeature;
 use cjseq::CityObject;
 use cjseq::GeometryTemplates;
 use cjseq::Transform;
+
 use serde_json::{json, Value};
 
 extern crate clap;
@@ -259,13 +260,13 @@ fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<(), MyError> {
 
 fn collect_from_stdin() -> Result<(), MyError> {
     let stdin = std::io::stdin();
-    let mut cjj: CityJSON = CityJSON::new();
+    let mut cjj = CityJSON::new();
     for (i, line) in stdin.lock().lines().enumerate() {
         let l = line.unwrap();
         if i == 0 {
-            cjj = serde_json::from_str(&l)?;
+            cjj = CityJSON::from_str(&l)?;
         } else {
-            let cjf: CityJSONFeature = serde_json::from_str(&l)?;
+            let cjf = CityJSONFeature::from_str(&l)?;
             cjj.add_one_cjf(cjf);
         }
     }
@@ -301,7 +302,7 @@ fn cat_from_stdin() -> Result<(), MyError> {
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
-            let cjj: CityJSON = serde_json::from_str(&input)?;
+            let cjj: CityJSON = CityJSON::from_str(&input)?;
             let _ = cat(&cjj)?;
         }
         Err(error) => {
@@ -313,8 +314,10 @@ fn cat_from_stdin() -> Result<(), MyError> {
 
 fn cat_from_file(file: &PathBuf) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
-    let br = BufReader::new(f);
-    let cjj: CityJSON = serde_json::from_reader(br)?;
+    let mut br = BufReader::new(f);
+    let mut json_content = String::new();
+    br.read_to_string(&mut json_content)?;
+    let cjj: CityJSON = CityJSON::from_str(&json_content)?;
     cat(&cjj)?;
     Ok(())
 }
@@ -332,147 +335,14 @@ fn cat(cjj: &CityJSON) -> Result<(), MyError> {
     }
 
     //-- first line: the CityJSON "metadata"
-    let mut cj1: CityJSON = cjj.get_empty_copy();
-    //-- if geometry-templates have material/textures then these need to be added to 1st line
-    match &cjj.geometry_templates {
-        Some(x) => {
-            let mut gts2: GeometryTemplates = x.clone();
-            let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-            for g in &mut gts2.templates {
-                g.update_material(&mut m_oldnew);
-                g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
-            }
-            //-- "slice" materials
-            if cjj.appearance.is_some() {
-                let a = cjj.appearance.as_ref().unwrap();
-                let mut acjf: Appearance = Appearance::new();
-                acjf.default_theme_material = a.default_theme_material.clone();
-                acjf.default_theme_texture = a.default_theme_texture.clone();
-                if a.materials.is_some() {
-                    let am = a.materials.as_ref().unwrap();
-                    let mut mats2: Vec<Value> = Vec::new();
-                    mats2.resize(m_oldnew.len(), json!(null));
-                    for (old, new) in &m_oldnew {
-                        mats2[*new] = am[*old].clone();
-                    }
-                    acjf.materials = Some(mats2);
-                }
-                if a.textures.is_some() {
-                    let at = a.textures.as_ref().unwrap();
-                    let mut texs2: Vec<Value> = Vec::new();
-                    texs2.resize(t_oldnew.len(), json!(null));
-                    for (old, new) in &t_oldnew {
-                        texs2[*new] = at[*old].clone();
-                    }
-                    acjf.textures = Some(texs2);
-                }
-                if a.vertices_texture.is_some() {
-                    let atv = a.vertices_texture.as_ref().unwrap();
-                    let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
-                    t_new_vertices.resize(t_v_oldnew.len(), vec![]);
-                    for (old, new) in &t_v_oldnew {
-                        t_new_vertices[*new] = atv[*old].clone();
-                    }
-                    acjf.vertices_texture = Some(t_new_vertices);
-                }
-                cj1.appearance = Some(acjf);
-            }
-        }
-        None => (),
-    }
+    let cj1 = cjj.cat_metadata();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
-
-    //-- the other lines
-    let cos = &cjj.city_objects;
-    for (key, co) in cos {
-        if co.is_toplevel() {
-            let mut cjf = CityJSONFeature::new();
-            let mut co2: CityObject = co.clone();
-            let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-            match &mut co2.geometry {
-                Some(x) => {
-                    for g in x.iter_mut() {
-                        g.update_geometry_boundaries(&mut g_vi_oldnew);
-                        g.update_material(&mut m_oldnew);
-                        g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
-                    }
-                }
-                None => (),
-            }
-            cjf.add_co(key.clone(), co2);
-            cjf.id = key.to_string();
-
-            //-- TODO: to fix: children-of-children?
-            //-- process all the children (only one-level lower)
-            for childkey in co.get_children_keys() {
-                let coc = cos.get(&childkey).unwrap();
-                let mut coc2: CityObject = coc.clone();
-                match &mut coc2.geometry {
-                    Some(x) => {
-                        for g in x.iter_mut() {
-                            g.update_geometry_boundaries(&mut g_vi_oldnew);
-                            g.update_material(&mut m_oldnew);
-                            g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
-                        }
-                    }
-                    None => (),
-                }
-                cjf.add_co(childkey.clone(), coc2);
-            }
-
-            //-- "slice" geometry vertices
-            let allvertices = &cjj.vertices;
-            let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
-            g_new_vertices.resize(g_vi_oldnew.len(), vec![]);
-            for (old, new) in &g_vi_oldnew {
-                g_new_vertices[*new] = allvertices[*old].clone();
-            }
-            cjf.vertices = g_new_vertices;
-
-            //-- "slice" materials
-            if cjj.appearance.is_some() {
-                let a = cjj.appearance.as_ref().unwrap();
-                let mut acjf: Appearance = Appearance::new();
-                acjf.default_theme_material = a.default_theme_material.clone();
-                acjf.default_theme_texture = a.default_theme_texture.clone();
-                if a.materials.is_some() {
-                    let am = a.materials.as_ref().unwrap();
-                    let mut mats2: Vec<Value> = Vec::new();
-                    mats2.resize(m_oldnew.len(), json!(null));
-                    for (old, new) in &m_oldnew {
-                        mats2[*new] = am[*old].clone();
-                    }
-                    acjf.materials = Some(mats2);
-                }
-                if a.textures.is_some() {
-                    let at = a.textures.as_ref().unwrap();
-                    let mut texs2: Vec<Value> = Vec::new();
-                    texs2.resize(t_oldnew.len(), json!(null));
-                    for (old, new) in &t_oldnew {
-                        texs2[*new] = at[*old].clone();
-                    }
-                    acjf.textures = Some(texs2);
-                }
-                if a.vertices_texture.is_some() {
-                    let atv = a.vertices_texture.as_ref().unwrap();
-                    let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
-                    t_new_vertices.resize(t_v_oldnew.len(), vec![]);
-                    for (old, new) in &t_v_oldnew {
-                        t_new_vertices[*new] = atv[*old].clone();
-                    }
-                    acjf.vertices_texture = Some(t_new_vertices);
-                }
-                cjf.appearance = Some(acjf);
-            }
-
-            io::stdout()
-                .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
-        }
+    //-- the other lines for each CityJSONSeq
+    let mut i: usize = 0;
+    while let Some(cjf) = cjj.cat_feature(i) {
+        i += 1;
+        io::stdout()
+            .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
     }
     Ok(())
 }

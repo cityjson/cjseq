@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Error, Value};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -22,6 +22,8 @@ pub struct CityJSON {
     pub extensions: Option<Value>,
     #[serde(flatten)]
     other: serde_json::Value,
+    #[serde(skip)]
+    sorted_ids: Vec<String>,
 }
 impl CityJSON {
     pub fn new() -> Self {
@@ -39,7 +41,13 @@ impl CityJSON {
             geometry_templates: None,
             extensions: None,
             other: json!(null),
+            sorted_ids: vec![],
         }
+    }
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        let mut cjj: CityJSON = serde_json::from_str(s)?;
+        cjj.sorted_ids = cjj.city_objects.keys().cloned().collect();
+        Ok(cjj)
     }
     pub fn get_empty_copy(&self) -> Self {
         let co: HashMap<String, CityObject> = HashMap::new();
@@ -55,47 +63,174 @@ impl CityJSON {
             geometry_templates: self.geometry_templates.clone(),
             other: self.other.clone(),
             extensions: self.extensions.clone(),
+            sorted_ids: vec![],
         }
     }
-    pub fn add_co(&mut self, id: String, co: CityObject) {
-        self.city_objects.insert(id, co);
-    }
-    pub fn add_vertices(&mut self, mut v: Vec<Vec<i64>>) {
-        self.vertices.append(&mut v);
-    }
-    pub fn add_vertices_texture(&mut self, vs: Vec<Vec<f64>>) {
-        match &mut self.appearance {
-            Some(x) => x.add_vertices_texture(vs),
-            None => {
-                let mut a: Appearance = Appearance::new();
-                a.add_vertices_texture(vs);
-                self.appearance = Some(a);
-            }
+    pub fn cat_metadata(&self) -> Self {
+        //-- first line: the CityJSON "metadata"
+        let co: HashMap<String, CityObject> = HashMap::new();
+        let v: Vec<Vec<i64>> = Vec::new();
+        let mut cj0 = CityJSON {
+            thetype: self.thetype.clone(),
+            version: self.version.clone(),
+            transform: self.transform.clone(),
+            metadata: self.metadata.clone(),
+            city_objects: co,
+            vertices: v,
+            appearance: None,
+            geometry_templates: self.geometry_templates.clone(),
+            other: self.other.clone(),
+            extensions: self.extensions.clone(),
+            sorted_ids: vec![],
         };
-    }
-    pub fn add_material(&mut self, jm: Value) -> usize {
-        let re = match &mut self.appearance {
-            Some(x) => x.add_material(jm),
-            None => {
-                let mut a: Appearance = Appearance::new();
-                let re = a.add_material(jm);
-                self.appearance = Some(a);
-                re
+        //-- if geometry-templates have material/textures then these need to be
+        //-- added to 1st line (metadata)
+        match &self.geometry_templates {
+            Some(x) => {
+                let mut gts2: GeometryTemplates = x.clone();
+                let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+                let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+                let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+                for g in &mut gts2.templates {
+                    g.update_material(&mut m_oldnew);
+                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+                }
+                //-- "slice" materials
+                if self.appearance.is_some() {
+                    let a = self.appearance.as_ref().unwrap();
+                    let mut acjf: Appearance = Appearance::new();
+                    acjf.default_theme_material = a.default_theme_material.clone();
+                    acjf.default_theme_texture = a.default_theme_texture.clone();
+                    if a.materials.is_some() {
+                        let am = a.materials.as_ref().unwrap();
+                        let mut mats2: Vec<Value> = Vec::new();
+                        mats2.resize(m_oldnew.len(), json!(null));
+                        for (old, new) in &m_oldnew {
+                            mats2[*new] = am[*old].clone();
+                        }
+                        acjf.materials = Some(mats2);
+                    }
+                    if a.textures.is_some() {
+                        let at = a.textures.as_ref().unwrap();
+                        let mut texs2: Vec<Value> = Vec::new();
+                        texs2.resize(t_oldnew.len(), json!(null));
+                        for (old, new) in &t_oldnew {
+                            texs2[*new] = at[*old].clone();
+                        }
+                        acjf.textures = Some(texs2);
+                    }
+                    if a.vertices_texture.is_some() {
+                        let atv = a.vertices_texture.as_ref().unwrap();
+                        let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
+                        t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+                        for (old, new) in &t_v_oldnew {
+                            t_new_vertices[*new] = atv[*old].clone();
+                        }
+                        acjf.vertices_texture = Some(t_new_vertices);
+                    }
+                    cj0.appearance = Some(acjf);
+                }
             }
-        };
-        re
+            None => (),
+        }
+        cj0
     }
-    pub fn add_texture(&mut self, jm: Value) -> usize {
-        let re = match &mut self.appearance {
-            Some(x) => x.add_texture(jm),
-            None => {
-                let mut a: Appearance = Appearance::new();
-                let re = a.add_texture(jm);
-                self.appearance = Some(a);
-                re
+    pub fn cat_feature(&self, i: usize) -> Option<CityJSONFeature> {
+        let i2 = self.sorted_ids.get(i);
+        // println!("{:?}", i2);
+        if i2.is_none() {
+            return None;
+        }
+        let obj = self.city_objects.get(i2.unwrap());
+        if obj.is_none() {
+            return None;
+        }
+        // println!("{:?}", obj);
+        let co = obj.unwrap();
+        //-- the other lines
+        let mut cjf = CityJSONFeature::new();
+        let mut co2: CityObject = co.clone();
+        let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+        match &mut co2.geometry {
+            Some(x) => {
+                for g in x.iter_mut() {
+                    g.update_geometry_boundaries(&mut g_vi_oldnew);
+                    g.update_material(&mut m_oldnew);
+                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+                }
             }
-        };
-        re
+            None => (),
+        }
+        cjf.add_co(self.sorted_ids[i].clone(), co2);
+        cjf.id = self.sorted_ids[i].to_string();
+        //-- TODO: to fix: children-of-children?
+        //-- process all the children (only one-level lower)
+        for childkey in co.get_children_keys() {
+            let coc = self.city_objects.get(&childkey).unwrap();
+            let mut coc2: CityObject = coc.clone();
+            match &mut coc2.geometry {
+                Some(x) => {
+                    for g in x.iter_mut() {
+                        g.update_geometry_boundaries(&mut g_vi_oldnew);
+                        g.update_material(&mut m_oldnew);
+                        g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+                    }
+                }
+                None => (),
+            }
+            cjf.add_co(childkey.clone(), coc2);
+        }
+
+        //-- "slice" geometry vertices
+        let allvertices = &self.vertices;
+        let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
+        g_new_vertices.resize(g_vi_oldnew.len(), vec![]);
+        for (old, new) in &g_vi_oldnew {
+            g_new_vertices[*new] = allvertices[*old].clone();
+        }
+        cjf.vertices = g_new_vertices;
+
+        //-- "slice" materials
+        if self.appearance.is_some() {
+            let a = self.appearance.as_ref().unwrap();
+            let mut acjf: Appearance = Appearance::new();
+            acjf.default_theme_material = a.default_theme_material.clone();
+            acjf.default_theme_texture = a.default_theme_texture.clone();
+            if a.materials.is_some() {
+                let am = a.materials.as_ref().unwrap();
+                let mut mats2: Vec<Value> = Vec::new();
+                mats2.resize(m_oldnew.len(), json!(null));
+                for (old, new) in &m_oldnew {
+                    mats2[*new] = am[*old].clone();
+                }
+                acjf.materials = Some(mats2);
+            }
+            if a.textures.is_some() {
+                let at = a.textures.as_ref().unwrap();
+                let mut texs2: Vec<Value> = Vec::new();
+                texs2.resize(t_oldnew.len(), json!(null));
+                for (old, new) in &t_oldnew {
+                    texs2[*new] = at[*old].clone();
+                }
+                acjf.textures = Some(texs2);
+            }
+            if a.vertices_texture.is_some() {
+                let atv = a.vertices_texture.as_ref().unwrap();
+                let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
+                t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+                for (old, new) in &t_v_oldnew {
+                    t_new_vertices[*new] = atv[*old].clone();
+                }
+                acjf.vertices_texture = Some(t_new_vertices);
+            }
+            cjf.appearance = Some(acjf);
+        }
+        Some(cjf)
+        // io::stdout()
+        //     .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
     }
     pub fn add_one_cjf(&mut self, mut cjf: CityJSONFeature) {
         // let mut g_oldnew: HashMap<usize, usize> = HashMap::new();
@@ -142,7 +277,6 @@ impl CityJSON {
         //-- add the new vertices
         self.add_vertices(cjf.vertices.clone());
     }
-
     pub fn remove_duplicate_vertices(&mut self) {
         // let totalinput = self.vertices.len();
         let mut h: HashMap<String, usize> = HashMap::new();
@@ -177,7 +311,6 @@ impl CityJSON {
         //-- replace the vertices, innit?
         self.vertices = newvertices;
     }
-
     pub fn retransform(&mut self) {
         let mut newvertices: Vec<Vec<i64>> = Vec::new();
         let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];
@@ -201,6 +334,49 @@ impl CityJSON {
         let tty = (mins[1] as f64 * self.transform.scale[1]) + self.transform.translate[1];
         let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
         self.transform.translate = vec![ttx, tty, ttz];
+    }
+    fn add_co(&mut self, id: String, co: CityObject) {
+        if co.is_toplevel() {
+            self.sorted_ids.push(id.clone());
+        }
+        self.city_objects.insert(id.clone(), co);
+    }
+    fn add_vertices(&mut self, mut v: Vec<Vec<i64>>) {
+        self.vertices.append(&mut v);
+    }
+    fn add_vertices_texture(&mut self, vs: Vec<Vec<f64>>) {
+        match &mut self.appearance {
+            Some(x) => x.add_vertices_texture(vs),
+            None => {
+                let mut a: Appearance = Appearance::new();
+                a.add_vertices_texture(vs);
+                self.appearance = Some(a);
+            }
+        };
+    }
+    fn add_material(&mut self, jm: Value) -> usize {
+        let re = match &mut self.appearance {
+            Some(x) => x.add_material(jm),
+            None => {
+                let mut a: Appearance = Appearance::new();
+                let re = a.add_material(jm);
+                self.appearance = Some(a);
+                re
+            }
+        };
+        re
+    }
+    fn add_texture(&mut self, jm: Value) -> usize {
+        let re = match &mut self.appearance {
+            Some(x) => x.add_texture(jm),
+            None => {
+                let mut a: Appearance = Appearance::new();
+                let re = a.add_texture(jm);
+                self.appearance = Some(a);
+                re
+            }
+        };
+        re
     }
 }
 
@@ -226,6 +402,10 @@ impl CityJSONFeature {
             vertices: v,
             appearance: None,
         }
+    }
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        let cjf: CityJSONFeature = serde_json::from_str(&s)?;
+        Ok(cjf)
     }
     pub fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id, co);
@@ -305,21 +485,21 @@ pub enum GeometryType {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Geometry {
     #[serde(rename = "type")]
-    pub thetype: GeometryType,
+    thetype: GeometryType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lod: Option<String>,
-    pub boundaries: Value,
+    lod: Option<String>,
+    boundaries: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub semantics: Option<Value>,
+    semantics: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub material: Option<HashMap<String, Material>>,
+    material: Option<HashMap<String, Material>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub texture: Option<HashMap<String, Texture>>,
+    texture: Option<HashMap<String, Texture>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub template: Option<usize>,
+    template: Option<usize>,
     #[serde(rename = "transformationMatrix")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transformation_matrix: Option<Value>,
+    transformation_matrix: Option<Value>,
 }
 impl Geometry {
     pub fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
