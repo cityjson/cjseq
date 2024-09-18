@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.0] - XXX
+### Modified
+- cjseq is now a library + has one binary. Some the functionalities that were in the `main.rs` are now in the `lib.rs` and the binary basically just adds functions to filter and calls the functions of `lib.rs`. This was done also to easily create a Python package.
+
 ## [0.3.1] - 2024-06-17
 ### Modified
 - better readme + better help for subcommands
