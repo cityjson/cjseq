@@ -55,23 +55,6 @@ impl CityJSON {
         let cjj: CityJSON = serde_json::from_str(s)?;
         Ok(cjj)
     }
-    pub fn get_empty_copy(&self) -> Self {
-        let co: HashMap<String, CityObject> = HashMap::new();
-        let v: Vec<Vec<i64>> = Vec::new();
-        CityJSON {
-            thetype: self.thetype.clone(),
-            version: self.version.clone(),
-            transform: self.transform.clone(),
-            metadata: self.metadata.clone(),
-            city_objects: co,
-            vertices: v,
-            appearance: None,
-            geometry_templates: self.geometry_templates.clone(),
-            other: self.other.clone(),
-            extensions: self.extensions.clone(),
-            sorted_ids: vec![],
-        }
-    }
     pub fn cat_metadata(&self) -> Self {
         //-- first line: the CityJSON "metadata"
         let co: HashMap<String, CityObject> = HashMap::new();
