@@ -327,11 +327,11 @@ fn cat(cjj: &mut CityJSON) -> Result<(), MyError> {
     }
     cjj.sort_features(cjseq::SortingStrategy::Alphabetical);
     //-- first line: the CityJSON "metadata"
-    let cj1 = cjj.cat_metadata();
+    let cj1 = cjj.get_metadata();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
     //-- the other lines for each CityJSONSeq
     let mut i: usize = 0;
-    while let Some(cjf) = cjj.cat_feature(i) {
+    while let Some(cjf) = cjj.get_feature(i) {
         i += 1;
         io::stdout()
             .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;

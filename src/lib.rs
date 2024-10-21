@@ -55,7 +55,7 @@ impl CityJSON {
         let cjj: CityJSON = serde_json::from_str(s)?;
         Ok(cjj)
     }
-    pub fn cat_metadata(&self) -> Self {
+    pub fn get_metadata(&self) -> Self {
         //-- first line: the CityJSON "metadata"
         let co: HashMap<String, CityObject> = HashMap::new();
         let v: Vec<Vec<i64>> = Vec::new();
@@ -124,7 +124,7 @@ impl CityJSON {
         }
         cj0
     }
-    pub fn cat_feature(&self, i: usize) -> Option<CityJSONFeature> {
+    pub fn get_feature(&self, i: usize) -> Option<CityJSONFeature> {
         let i2 = self.sorted_ids.get(i);
         if i2.is_none() {
             return None;
