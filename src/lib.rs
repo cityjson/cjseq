@@ -256,6 +256,8 @@ impl CityJSON {
         }
         //-- add the new vertices
         self.add_vertices(cjf.vertices.clone());
+        //-- add the CO id to the list
+        self.sorted_ids.push(cjf.id);
     }
     pub fn remove_duplicate_vertices(&mut self) {
         // let totalinput = self.vertices.len();
