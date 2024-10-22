@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Error, Value};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub enum SortingStrategy {
     Random,
     Alphabetical,
