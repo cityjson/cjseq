@@ -130,7 +130,7 @@ impl CityJSON {
         }
         cj0
     }
-    pub fn get_feature(&self, i: usize) -> Option<CityJSONFeature> {
+    pub fn get_cjfeature(&self, i: usize) -> Option<CityJSONFeature> {
         let i2 = self.sorted_ids.get(i);
         if i2.is_none() {
             return None;
@@ -221,7 +221,7 @@ impl CityJSON {
         }
         Some(cjf)
     }
-    pub fn add_one_cjf(&mut self, mut cjf: CityJSONFeature) {
+    pub fn add_cjfeature(&mut self, cjf: &mut CityJSONFeature) {
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
@@ -261,9 +261,9 @@ impl CityJSON {
             self.add_co(key.to_string(), co.clone());
         }
         //-- add the new vertices
-        self.add_vertices(cjf.vertices.clone());
+        self.add_vertices(&mut cjf.vertices);
         //-- add the CO id to the list
-        self.sorted_ids.push(cjf.id);
+        self.sorted_ids.push(cjf.id.clone());
     }
     pub fn remove_duplicate_vertices(&mut self) {
         // let totalinput = self.vertices.len();
@@ -323,7 +323,7 @@ impl CityJSON {
         let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
         self.transform.translate = vec![ttx, tty, ttz];
     }
-    pub fn sort_features(&mut self, ss: SortingStrategy) {
+    pub fn sort_cjfeatures(&mut self, ss: SortingStrategy) {
         self.sorted_ids.clear();
         match ss {
             SortingStrategy::Random => {
@@ -347,8 +347,8 @@ impl CityJSON {
     fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id.clone(), co);
     }
-    fn add_vertices(&mut self, mut v: Vec<Vec<i64>>) {
-        self.vertices.append(&mut v);
+    fn add_vertices(&mut self, v: &mut Vec<Vec<i64>>) {
+        self.vertices.append(v);
     }
     fn add_vertices_texture(&mut self, vs: Vec<Vec<f64>>) {
         match &mut self.appearance {
