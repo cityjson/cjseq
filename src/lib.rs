@@ -52,7 +52,13 @@ impl CityJSON {
         }
     }
     pub fn from_str(s: &str) -> Result<Self, Error> {
-        let cjj: CityJSON = serde_json::from_str(s)?;
+        let mut cjj: CityJSON = serde_json::from_str(s)?;
+        //-- check if CO exists, then add them to the sorted_ids
+        for (key, co) in &cjj.city_objects {
+            if co.is_toplevel() {
+                cjj.sorted_ids.push(key.clone());
+            }
+        }
         Ok(cjj)
     }
     pub fn get_metadata(&self) -> Self {
