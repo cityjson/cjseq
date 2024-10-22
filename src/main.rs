@@ -2,7 +2,7 @@ use cjseq::CityJSON;
 use cjseq::CityJSONFeature;
 
 extern crate clap;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use rand::Rng;
 use std::fmt;
@@ -19,17 +19,26 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(Clone, ValueEnum)]
+pub enum SortingStrategy {
+    Random,
+    Alphabetical,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// CityJSON ==> CityJSONSeq
     Cat {
-        /// CityJSONSeq input file
+        /// CityJSON input file
         #[arg(short, long)]
         file: Option<PathBuf>,
+        /// Sorting for the cat output
+        #[arg(short, long, value_enum)]
+        order: Option<SortingStrategy>,
     },
     /// CityJSONSeq ==> CityJSON
     Collect {
-        /// CityJSON input file
+        /// CityJSONSeq input file
         #[arg(short, long)]
         file: Option<PathBuf>,
     },
@@ -91,20 +100,26 @@ fn main() {
 
     match &cli.command {
         //-- cat
-        Commands::Cat { file } => match file {
-            Some(x) => {
-                if let Err(e) = cat_from_file(x) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
+        Commands::Cat { file, order } => {
+            let o2 = match order.clone().unwrap_or(SortingStrategy::Random) {
+                SortingStrategy::Random => cjseq::SortingStrategy::Random,
+                SortingStrategy::Alphabetical => cjseq::SortingStrategy::Alphabetical,
+            };
+            match file {
+                Some(x) => {
+                    if let Err(e) = cat_from_file(x, o2) {
+                        eprintln!("{e}");
+                        std::process::exit(1);
+                    }
+                }
+                None => {
+                    if let Err(e) = cat_from_stdin(o2) {
+                        eprintln!("{e}");
+                        std::process::exit(1);
+                    }
                 }
             }
-            None => {
-                if let Err(e) = cat_from_stdin() {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
-        },
+        }
         //-- collect
         Commands::Collect { file } => match file {
             Some(x) => {
@@ -257,8 +272,8 @@ fn collect_from_stdin() -> Result<(), MyError> {
         if i == 0 {
             cjj = CityJSON::from_str(&l)?;
         } else {
-            let cjf = CityJSONFeature::from_str(&l)?;
-            cjj.add_one_cjf(cjf);
+            let mut cjf = CityJSONFeature::from_str(&l)?;
+            cjj.add_cjfeature(&mut cjf);
         }
     }
     cjj.remove_duplicate_vertices();
@@ -277,8 +292,8 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
                 if i == 0 {
                     cjj = serde_json::from_str(&l)?;
                 } else {
-                    let cjf: CityJSONFeature = serde_json::from_str(&l)?;
-                    cjj.add_one_cjf(cjf);
+                    let mut cjf: CityJSONFeature = serde_json::from_str(&l)?;
+                    cjj.add_cjfeature(&mut cjf);
                 }
             }
             Err(error) => eprintln!("Error reading line: {}", error),
@@ -290,12 +305,12 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
     Ok(())
 }
 
-fn cat_from_stdin() -> Result<(), MyError> {
+fn cat_from_stdin(order: cjseq::SortingStrategy) -> Result<(), MyError> {
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
             let mut cjj: CityJSON = CityJSON::from_str(&input)?;
-            let _ = cat(&mut cjj)?;
+            let _ = cat(&mut cjj, order)?;
         }
         Err(error) => {
             eprintln!("Error: {}", error);
@@ -304,17 +319,17 @@ fn cat_from_stdin() -> Result<(), MyError> {
     Ok(())
 }
 
-fn cat_from_file(file: &PathBuf) -> Result<(), MyError> {
+fn cat_from_file(file: &PathBuf, order: cjseq::SortingStrategy) -> Result<(), MyError> {
     let f = File::open(file.canonicalize()?)?;
     let mut br = BufReader::new(f);
     let mut json_content = String::new();
     br.read_to_string(&mut json_content)?;
     let mut cjj: CityJSON = CityJSON::from_str(&json_content)?;
-    cat(&mut cjj)?;
+    cat(&mut cjj, order)?;
     Ok(())
 }
 
-fn cat(cjj: &mut CityJSON) -> Result<(), MyError> {
+fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<(), MyError> {
     if cjj.thetype != "CityJSON" {
         return Err(MyError::CityJsonError(
             "Input file not CityJSON.".to_string(),
@@ -325,13 +340,13 @@ fn cat(cjj: &mut CityJSON) -> Result<(), MyError> {
             "Input file not CityJSON v1.1 nor v2.0.".to_string(),
         ));
     }
-    cjj.sort_features(cjseq::SortingStrategy::Alphabetical);
+    cjj.sort_cjfeatures(order);
     //-- first line: the CityJSON "metadata"
     let cj1 = cjj.get_metadata();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
     //-- the other lines for each CityJSONSeq
     let mut i: usize = 0;
-    while let Some(cjf) = cjj.get_feature(i) {
+    while let Some(cjf) = cjj.get_cjfeature(i) {
         i += 1;
         io::stdout()
             .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
