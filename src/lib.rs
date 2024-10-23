@@ -300,7 +300,7 @@ impl CityJSON {
         //-- replace the vertices, innit?
         self.vertices = newvertices;
     }
-    pub fn retransform(&mut self) {
+    pub fn update_transform(&mut self) {
         let mut newvertices: Vec<Vec<i64>> = Vec::new();
         let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];
         //-- find min-xyz
