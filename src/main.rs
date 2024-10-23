@@ -201,7 +201,7 @@ fn filter_cotype(exclude: bool, cotype: String) -> Result<(), MyError> {
         if i == 0 {
             io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
         } else {
-            let cjf: CityJSONFeature = serde_json::from_str(&l)?;
+            let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
             if cjf.city_objects[&cjf.id].get_type() == cotype {
                 w = true;
             }
@@ -221,9 +221,9 @@ fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<(), MyError> {
         let l = line.unwrap();
         if i == 0 {
             io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-            cj = serde_json::from_str(&l)?;
+            cj = CityJSON::from_str(&l)?;
         } else {
-            let cjf: CityJSONFeature = serde_json::from_str(&l)?;
+            let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
             let ci = cjf.centroid();
             let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
             let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
@@ -246,9 +246,9 @@ fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<(), MyError> {
         let l = line.unwrap();
         if i == 0 {
             io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-            cj = serde_json::from_str(&l)?;
+            cj = CityJSON::from_str(&l)?;
         } else {
-            let cjf: CityJSONFeature = serde_json::from_str(&l)?;
+            let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
             let ci = cjf.centroid();
             let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
             let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
@@ -290,9 +290,9 @@ fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
         match &line {
             Ok(l) => {
                 if i == 0 {
-                    cjj = serde_json::from_str(&l)?;
+                    cjj = CityJSON::from_str(&l)?;
                 } else {
-                    let mut cjf: CityJSONFeature = serde_json::from_str(&l)?;
+                    let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
                     cjj.add_cjfeature(&mut cjf);
                 }
             }
