@@ -324,6 +324,15 @@ impl CityJSON {
         let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
         self.transform.translate = vec![ttx, tty, ttz];
     }
+    pub fn number_of_city_objects(&self) -> usize {
+        let mut total: usize = 0;
+        for (_key, co) in &self.city_objects {
+            if co.is_toplevel() {
+                total += 1;
+            }
+        }
+        total
+    }
     pub fn sort_cjfeatures(&mut self, ss: SortingStrategy) {
         self.sorted_ids.clear();
         match ss {
