@@ -993,7 +993,9 @@ impl ReferenceSystem {
         }
     }
 
-    pub fn to_url(&self, base_url: &str) -> String {
+    pub fn to_url(&self, base_url: Option<&str>) -> String {
+        let base_url = base_url.unwrap_or("http://www.opengis.net/def/crs");
+
         format!(
             "{}/{}/{}/{}",
             base_url, self.authority, self.version, self.code
