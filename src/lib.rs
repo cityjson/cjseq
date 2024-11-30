@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Error, Value};
-use std::collections::HashMap;
+use std::{array, collections::HashMap};
 
 #[derive(Clone)]
 pub enum SortingStrategy {
@@ -20,7 +20,7 @@ pub struct CityJSON {
     pub city_objects: HashMap<String, CityObject>,
     pub vertices: Vec<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Value>,
+    pub metadata: Option<Metadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
     #[serde(rename = "geometry-templates")]
@@ -933,6 +933,93 @@ impl Transform {
             translate: vec![0., 0., 0.],
         }
     }
+}
+
+pub type GeographicalExtent = [f64; 6];
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Address {
+    #[serde(rename = "thoroughfareNumber")]
+    pub thoroughfare_number: i64,
+    #[serde(rename = "thoroughfareName")]
+    pub thoroughfare_name: String,
+    pub locality: String,
+    #[serde(rename = "postalCode")]
+    pub postal_code: String,
+    pub country: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PointOfContact {
+    #[serde(rename = "contactName")]
+    pub contact_name: String,
+    #[serde(rename = "contactType")]
+    pub contact_type: String,
+    #[serde(rename = "role")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(rename = "emailAddress")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<Address>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ReferenceSystem {
+    pub authority: String,
+    pub version: String,
+    pub code: String,
+}
+
+impl ReferenceSystem {
+    pub fn new(authority: String, version: String, code: String) -> Self {
+        ReferenceSystem {
+            authority,
+            version,
+            code,
+        }
+    }
+
+    pub fn to_url(&self, base_url: &str) -> String {
+        format!(
+            "{}/{}/{}/{}",
+            base_url, self.authority, self.version, self.code
+        )
+    }
+
+    // http://www.opengis.net/def/crs/{authority}/{version}/{code}
+    pub fn from_url(url: &str) -> Result<Self, &'static str> {
+        let parts: Vec<&str> = url.split("/").collect();
+
+        if parts.len() != 4 {
+            return Err("Invalid reference system URL");
+        }
+
+        Ok(ReferenceSystem {
+            authority: parts[1].to_string(),
+            version: parts[2].to_string(),
+            code: parts[3].to_string(),
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Metadata {
+    #[serde(rename = "geographicalExtent")]
+    pub geographical_extent: GeographicalExtent,
+    pub identifier: String,
+    #[serde(rename = "pointOfContact")]
+    pub point_of_contact: PointOfContact,
+    #[serde(rename = "referenceDate")]
+    pub reference_date: String,
+    #[serde(rename = "referenceSystem")]
+    pub reference_system: String,
+    pub title: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
