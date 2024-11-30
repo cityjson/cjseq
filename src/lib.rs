@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Error, Value};
-use std::{array, collections::HashMap};
 
 #[derive(Clone)]
 pub enum SortingStrategy {
