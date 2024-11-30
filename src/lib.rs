@@ -968,7 +968,15 @@ pub struct PointOfContact {
     pub address: Option<Address>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// A reference system following the OGC Name Type Specification.
+///
+/// The format follows: `http://www.opengis.net/def/crs/{authority}/{version}/{code}`
+/// where:
+/// - `{authority}` designates the authority responsible for the definition of this CRS
+///   (usually "EPSG" or "OGC")
+/// - `{version}` designates the specific version of the CRS
+///   (use "0" if there is no version)
+/// - `{code}` is the identifier for the specific coordinate reference system
 pub struct ReferenceSystem {
     pub authority: String,
     pub version: String,
@@ -991,7 +999,9 @@ impl ReferenceSystem {
         )
     }
 
+    // OGC Name Type Specification:
     // http://www.opengis.net/def/crs/{authority}/{version}/{code}
+    // where {authority} designates the authority responsible for the definition of this CRS (usually "EPSG" or "OGC"), and where {version} designates the specific version of the CRS ("0" (zero) is used if there is no version).
     pub fn from_url(url: &str) -> Result<Self, &'static str> {
         let parts: Vec<&str> = url.split("/").collect();
 
