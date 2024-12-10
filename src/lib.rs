@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Error, Value};
 use std::collections::HashMap;
 
+const DEFAULT_CRS_BASE_URL: &str = "http://www.opengis.net/def/crs";
+
 #[derive(Clone)]
 pub enum SortingStrategy {
     Random,
@@ -978,28 +980,29 @@ pub struct PointOfContact {
 /// - `{version}` designates the specific version of the CRS
 ///   (use "0" if there is no version)
 /// - `{code}` is the identifier for the specific coordinate reference system
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ReferenceSystem {
+    pub base_url: String,
     pub authority: String,
     pub version: String,
     pub code: String,
 }
 
 impl ReferenceSystem {
-    pub fn new(authority: String, version: String, code: String) -> Self {
+    pub fn new(base_url: Option<String>, authority: String, version: String, code: String) -> Self {
+        let base_url = base_url.unwrap_or(DEFAULT_CRS_BASE_URL.to_string());
         ReferenceSystem {
+            base_url,
             authority,
             version,
             code,
         }
     }
 
-    pub fn to_url(&self, base_url: Option<&str>) -> String {
-        let base_url = base_url.unwrap_or("http://www.opengis.net/def/crs");
-
+    pub fn to_url(&self) -> String {
         format!(
             "{}/{}/{}/{}",
-            base_url, self.authority, self.version, self.code
+            self.base_url, self.authority, self.version, self.code
         )
     }
 
@@ -1014,10 +1017,30 @@ impl ReferenceSystem {
         }
 
         Ok(ReferenceSystem {
+            base_url: parts[0].to_string(),
             authority: parts[1].to_string(),
             version: parts[2].to_string(),
             code: parts[3].to_string(),
         })
+    }
+}
+
+impl Serialize for ReferenceSystem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_url().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReferenceSystem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let url = String::deserialize(deserializer)?;
+        ReferenceSystem::from_url(&url).map_err(serde::de::Error::custom)
     }
 }
 
