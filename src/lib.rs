@@ -962,7 +962,7 @@ pub struct PointOfContact {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
     #[serde(rename = "emailAddress")]
-    pub email_address: Option<String>,
+    pub email_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
