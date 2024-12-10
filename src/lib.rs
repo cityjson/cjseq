@@ -978,7 +978,6 @@ pub struct PointOfContact {
 /// - `{version}` designates the specific version of the CRS
 ///   (use "0" if there is no version)
 /// - `{code}` is the identifier for the specific coordinate reference system
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReferenceSystem {
     pub authority: String,
     pub version: String,
@@ -1031,7 +1030,7 @@ pub struct Metadata {
     #[serde(rename = "referenceDate")]
     pub reference_date: String,
     #[serde(rename = "referenceSystem")]
-    pub reference_system: ReferenceSystem,
+    pub reference_system: String,
     pub title: String,
 }
 
