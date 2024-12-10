@@ -962,7 +962,6 @@ pub struct PointOfContact {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
     #[serde(rename = "emailAddress")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub email_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
@@ -979,6 +978,7 @@ pub struct PointOfContact {
 /// - `{version}` designates the specific version of the CRS
 ///   (use "0" if there is no version)
 /// - `{code}` is the identifier for the specific coordinate reference system
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReferenceSystem {
     pub authority: String,
     pub version: String,
@@ -1024,15 +1024,21 @@ impl ReferenceSystem {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Metadata {
     #[serde(rename = "geographicalExtent")]
-    pub geographical_extent: GeographicalExtent,
-    pub identifier: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geographical_extent: Option<GeographicalExtent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<String>,
     #[serde(rename = "pointOfContact")]
-    pub point_of_contact: PointOfContact,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub point_of_contact: Option<PointOfContact>,
     #[serde(rename = "referenceDate")]
-    pub reference_date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_date: Option<String>,
     #[serde(rename = "referenceSystem")]
-    pub reference_system: String,
-    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_system: Option<ReferenceSystem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
