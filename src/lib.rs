@@ -954,7 +954,8 @@ pub struct PointOfContact {
     #[serde(rename = "contactName")]
     pub contact_name: String,
     #[serde(rename = "contactType")]
-    pub contact_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_type: Option<String>,
     #[serde(rename = "role")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
