@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Error, Value};
 use std::collections::HashMap;
 
-const DEFAULT_CRS_BASE_URL: &str = "http://www.opengis.net/def/crs";
+const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 
 #[derive(Clone)]
 pub enum SortingStrategy {
@@ -1010,17 +1010,23 @@ impl ReferenceSystem {
     // http://www.opengis.net/def/crs/{authority}/{version}/{code}
     // where {authority} designates the authority responsible for the definition of this CRS (usually "EPSG" or "OGC"), and where {version} designates the specific version of the CRS ("0" (zero) is used if there is no version).
     pub fn from_url(url: &str) -> Result<Self, &'static str> {
-        let parts: Vec<&str> = url.split("/").collect();
+        if !url.contains("//www.opengis.net/def/crs") {
+            return Err("Invalid reference system URL");
+        }
 
-        if parts.len() != 4 {
+        let i = url.find("crs").unwrap();
+        let s = &url[i + 4..];
+
+        let parts: Vec<&str> = s.split("/").collect();
+        if parts.len() != 3 {
             return Err("Invalid reference system URL");
         }
 
         Ok(ReferenceSystem {
-            base_url: parts[0].to_string(),
-            authority: parts[1].to_string(),
-            version: parts[2].to_string(),
-            code: parts[3].to_string(),
+            base_url: url[..i + 3].to_string(),
+            authority: parts[0].to_string(),
+            version: parts[1].to_string(),
+            code: parts[2].to_string(),
         })
     }
 }
