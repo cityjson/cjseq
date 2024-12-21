@@ -574,7 +574,7 @@ fn parse_boundaries_from_value(v: &Value) -> Boundaries {
                 Value::Array(_) => {
                     let mut nested = Vec::with_capacity(elems.len());
                     for sub in elems {
-                        nested.push(parse_boundaries_from_value(&sub));
+                        nested.push(parse_boundaries_from_value(sub));
                     }
                     Boundaries::Nested(nested)
                 }
