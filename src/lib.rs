@@ -503,7 +503,7 @@ pub enum GeometryType {
     GeometryInstance,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum Boundaries {
     Indices(Vec<u32>),
     Nested(Vec<Boundaries>),
@@ -513,13 +513,13 @@ impl Boundaries {
     fn update_indices_recursively(&mut self, violdnew: &mut HashMap<usize, usize>) {
         match self {
             Boundaries::Indices(arr) => {
-                for i in 0..arr.len() {
-                    let old_idx = arr[i];
+                for index in arr {
+                    let old_idx = *index;
                     let new_idx = {
                         let len = violdnew.len();
                         *violdnew.entry(old_idx as usize).or_insert_with(|| len)
                     };
-                    arr[i] = new_idx as u32;
+                    *index = new_idx as u32;
                 }
             }
             Boundaries::Nested(nested_vec) => {
@@ -532,8 +532,8 @@ impl Boundaries {
     fn offset_geometry_boundaries(&mut self, offset: usize) {
         match self {
             Boundaries::Indices(indices) => {
-                for i in 0..indices.len() {
-                    indices[i] += offset as u32;
+                for index in indices {
+                    *index += offset as u32;
                 }
             }
             Boundaries::Nested(nested) => {
@@ -542,6 +542,25 @@ impl Boundaries {
                 }
             }
         }
+    }
+}
+
+impl Serialize for Boundaries {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        boundaries_to_value(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Boundaries {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = Value::deserialize(deserializer)?;
+        Ok(parse_boundaries_from_value(&v))
     }
 }
 
@@ -591,7 +610,7 @@ fn boundaries_to_value(b: &Boundaries) -> Value {
             Value::Array(arr)
         }
         Boundaries::Nested(nested) => {
-            let arr = nested.iter().map(|x| boundaries_to_value(x)).collect();
+            let arr = nested.iter().map(boundaries_to_value).collect();
             Value::Array(arr)
         }
     }
