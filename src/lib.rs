@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Error, Value};
+use serde_json::{json, Error, Number, Value};
 use std::collections::HashMap;
 
 const DEFAULT_CRS_BASE_URL: &str = "http://www.opengis.net/def/crs";
@@ -503,13 +503,107 @@ pub enum GeometryType {
     GeometryInstance,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Boundaries {
+    Indices(Vec<u32>),
+    Nested(Vec<Boundaries>),
+}
+
+impl Boundaries {
+    fn update_indices_recursively(&mut self, violdnew: &mut HashMap<usize, usize>) {
+        match self {
+            Boundaries::Indices(arr) => {
+                for i in 0..arr.len() {
+                    let old_idx = arr[i];
+                    let new_idx = {
+                        let len = violdnew.len();
+                        *violdnew.entry(old_idx as usize).or_insert_with(|| len)
+                    };
+                    arr[i] = new_idx as u32;
+                }
+            }
+            Boundaries::Nested(nested_vec) => {
+                for sub in nested_vec {
+                    sub.update_indices_recursively(violdnew);
+                }
+            }
+        }
+    }
+    fn offset_geometry_boundaries(&mut self, offset: usize) {
+        match self {
+            Boundaries::Indices(indices) => {
+                for i in 0..indices.len() {
+                    indices[i] += offset as u32;
+                }
+            }
+            Boundaries::Nested(nested) => {
+                for sub in nested {
+                    sub.offset_geometry_boundaries(offset);
+                }
+            }
+        }
+    }
+}
+
+fn parse_boundaries_from_value(v: &Value) -> Boundaries {
+    match v {
+        Value::Array(elems) => {
+            if elems.is_empty() {
+                return Boundaries::Indices(Vec::new());
+            }
+            match &elems[0] {
+                Value::Array(_) => {
+                    let mut nested = Vec::with_capacity(elems.len());
+                    for sub in elems {
+                        nested.push(parse_boundaries_from_value(&sub));
+                    }
+                    Boundaries::Nested(nested)
+                }
+                Value::Number(_) => {
+                    let mut indices = Vec::with_capacity(elems.len());
+                    for num_val in elems {
+                        if let Some(u) = num_val.as_u64() {
+                            indices.push(u as u32);
+                        } else if let Some(i) = num_val.as_i64() {
+                            indices.push(i as u32);
+                        }
+                    }
+                    Boundaries::Indices(indices)
+                }
+                _ => {
+                    return Boundaries::Indices(Vec::new());
+                }
+            }
+        }
+        _ => {
+            return Boundaries::Indices(Vec::new());
+        }
+    }
+}
+
+fn boundaries_to_value(b: &Boundaries) -> Value {
+    match b {
+        Boundaries::Indices(indices) => {
+            let arr = indices
+                .iter()
+                .map(|x| Value::Number(Number::from(*x as u64)))
+                .collect();
+            Value::Array(arr)
+        }
+        Boundaries::Nested(nested) => {
+            let arr = nested.iter().map(|x| boundaries_to_value(x)).collect();
+            Value::Array(arr)
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Geometry {
     #[serde(rename = "type")]
     pub thetype: GeometryType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lod: Option<String>,
-    pub boundaries: Value,
+    pub boundaries: Boundaries,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantics: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -524,205 +618,41 @@ pub struct Geometry {
 }
 impl Geometry {
     fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
-        match self.thetype {
-            GeometryType::MultiPoint => {
-                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    let kk = violdnew.get(&x);
-                    if kk.is_none() {
-                        let l = violdnew.len();
-                        violdnew.insert(*x, l);
-                        a2[i] = l;
-                    } else {
-                        let kk = kk.unwrap();
-                        a2[i] = *kk;
-                    }
+        match &mut self.boundaries {
+            Boundaries::Indices(indices) => {
+                for index in indices {
+                    let old_idx = *index;
+                    let new_idx = {
+                        let len = violdnew.len();
+                        *violdnew.entry(old_idx as usize).or_insert_with(|| len)
+                    };
+                    *index = new_idx as u32;
                 }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
             }
-            GeometryType::MultiLineString => {
-                let a: Vec<Vec<usize>> = serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        // r.push(z);
-                        let kk = violdnew.get(&y);
-                        if kk.is_none() {
-                            let l = violdnew.len();
-                            violdnew.insert(*y, l);
-                            a2[i][j] = l;
-                        } else {
-                            let kk = kk.unwrap();
-                            a2[i][j] = *kk;
-                        }
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::MultiSurface | GeometryType::CompositeSurface => {
-                let a: Vec<Vec<Vec<usize>>> =
-                    serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        for (k, z) in y.iter().enumerate() {
-                            let kk = violdnew.get(&z);
-                            if kk.is_none() {
-                                let l = violdnew.len();
-                                violdnew.insert(*z, l);
-                                a2[i][j][k] = l;
-                            } else {
-                                let kk = kk.unwrap();
-                                a2[i][j][k] = *kk;
+            Boundaries::Nested(nested) => {
+                for sub in nested {
+                    match sub {
+                        Boundaries::Indices(r) => {
+                            for index in r {
+                                let old_idx = *index;
+                                let new_idx = {
+                                    let len = violdnew.len();
+                                    *violdnew.entry(old_idx as usize).or_insert_with(|| len)
+                                };
+                                *index = new_idx as u32;
                             }
                         }
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::Solid => {
-                let a: Vec<Vec<Vec<Vec<usize>>>> =
-                    serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        for (k, z) in y.iter().enumerate() {
-                            for (l, zz) in z.iter().enumerate() {
-                                let kk = violdnew.get(&zz);
-                                if kk.is_none() {
-                                    let l2 = violdnew.len();
-                                    violdnew.insert(*zz, l2);
-                                    a2[i][j][k][l] = l2;
-                                } else {
-                                    let kk = kk.unwrap();
-                                    a2[i][j][k][l] = *kk;
-                                }
-                            }
+                        Boundaries::Nested(_) => {
+                            sub.update_indices_recursively(violdnew);
                         }
                     }
                 }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::MultiSolid | GeometryType::CompositeSolid => {
-                let a: Vec<Vec<Vec<Vec<Vec<usize>>>>> =
-                    serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        for (k, z) in y.iter().enumerate() {
-                            for (l, zz) in z.iter().enumerate() {
-                                for (m, zzz) in zz.iter().enumerate() {
-                                    let kk = violdnew.get(&zzz);
-                                    if kk.is_none() {
-                                        let l2 = violdnew.len();
-                                        violdnew.insert(*zzz, l2);
-                                        a2[i][j][k][l][m] = l2;
-                                    } else {
-                                        let kk = kk.unwrap();
-                                        a2[i][j][k][l][m] = *kk;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::GeometryInstance => {
-                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    let kk = violdnew.get(&x);
-                    if kk.is_none() {
-                        let l = violdnew.len();
-                        violdnew.insert(*x, l);
-                        a2[i] = l;
-                    } else {
-                        let kk = kk.unwrap();
-                        a2[i] = *kk;
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
             }
         }
     }
 
     fn offset_geometry_boundaries(&mut self, offset: usize) {
-        match self.thetype {
-            GeometryType::MultiPoint => {
-                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    a2[i] = *x + offset;
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::MultiLineString => {
-                let a: Vec<Vec<usize>> = serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        // r.push(z);
-                        a2[i][j] = *y + offset;
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::MultiSurface | GeometryType::CompositeSurface => {
-                let a: Vec<Vec<Vec<usize>>> =
-                    serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        for (k, z) in y.iter().enumerate() {
-                            a2[i][j][k] = *z + offset;
-                        }
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::Solid => {
-                let a: Vec<Vec<Vec<Vec<usize>>>> =
-                    serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        for (k, z) in y.iter().enumerate() {
-                            for (l, zz) in z.iter().enumerate() {
-                                a2[i][j][k][l] = *zz + offset;
-                            }
-                        }
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::MultiSolid | GeometryType::CompositeSolid => {
-                let a: Vec<Vec<Vec<Vec<Vec<usize>>>>> =
-                    serde_json::from_value(self.boundaries.take()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    for (j, y) in x.iter().enumerate() {
-                        for (k, z) in y.iter().enumerate() {
-                            for (l, zz) in z.iter().enumerate() {
-                                for (m, zzz) in zz.iter().enumerate() {
-                                    a2[i][j][k][l][m] = *zzz + offset;
-                                }
-                            }
-                        }
-                    }
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-            GeometryType::GeometryInstance => {
-                let a: Vec<usize> = serde_json::from_value(self.boundaries.clone()).unwrap();
-                let mut a2 = a.clone();
-                for (i, x) in a.iter().enumerate() {
-                    a2[i] = *x + offset;
-                }
-                self.boundaries = serde_json::to_value(&a2).unwrap();
-            }
-        }
+        self.boundaries.offset_geometry_boundaries(offset);
     }
 
     fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
@@ -1012,15 +942,11 @@ impl ReferenceSystem {
     pub fn from_url(url: &str) -> Result<Self, &'static str> {
         let parts: Vec<&str> = url.split("/").collect();
 
-        if parts.len() != 4 {
-            return Err("Invalid reference system URL");
-        }
-
         Ok(ReferenceSystem {
-            base_url: parts[0].to_string(),
-            authority: parts[1].to_string(),
-            version: parts[2].to_string(),
-            code: parts[3].to_string(),
+            base_url: parts[..parts.len() - 3].join("/"),
+            authority: parts[parts.len() - 3].to_string(),
+            version: parts[parts.len() - 2].to_string(),
+            code: parts[parts.len() - 1].to_string(),
         })
     }
 }
