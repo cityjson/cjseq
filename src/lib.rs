@@ -504,10 +504,13 @@ pub enum GeometryType {
 }
 
 #[derive(Debug, Clone)]
-pub enum Boundaries {
+pub enum NestedArray {
     Indices(Vec<u32>),
-    Nested(Vec<Boundaries>),
+    Nested(Vec<NestedArray>),
 }
+
+pub type Boundaries = NestedArray;
+pub type Semantics = NestedArray;
 
 impl Boundaries {
     fn update_indices_recursively(&mut self, violdnew: &mut HashMap<usize, usize>) {
@@ -545,7 +548,7 @@ impl Boundaries {
     }
 }
 
-impl Serialize for Boundaries {
+impl Serialize for NestedArray {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -554,7 +557,7 @@ impl Serialize for Boundaries {
     }
 }
 
-impl<'de> Deserialize<'de> for Boundaries {
+impl<'de> Deserialize<'de> for NestedArray {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -564,11 +567,11 @@ impl<'de> Deserialize<'de> for Boundaries {
     }
 }
 
-fn parse_boundaries_from_value(v: &Value) -> Boundaries {
+fn parse_boundaries_from_value(v: &Value) -> NestedArray {
     match v {
         Value::Array(elems) => {
             if elems.is_empty() {
-                return Boundaries::Indices(Vec::new());
+                return NestedArray::Indices(Vec::new());
             }
             match &elems[0] {
                 Value::Array(_) => {
@@ -576,7 +579,7 @@ fn parse_boundaries_from_value(v: &Value) -> Boundaries {
                     for sub in elems {
                         nested.push(parse_boundaries_from_value(sub));
                     }
-                    Boundaries::Nested(nested)
+                    NestedArray::Nested(nested)
                 }
                 Value::Number(_) => {
                     let mut indices = Vec::with_capacity(elems.len());
@@ -587,29 +590,29 @@ fn parse_boundaries_from_value(v: &Value) -> Boundaries {
                             indices.push(i as u32);
                         }
                     }
-                    Boundaries::Indices(indices)
+                    NestedArray::Indices(indices)
                 }
                 _ => {
-                    return Boundaries::Indices(Vec::new());
+                    return NestedArray::Indices(Vec::new());
                 }
             }
         }
         _ => {
-            return Boundaries::Indices(Vec::new());
+            return NestedArray::Indices(Vec::new());
         }
     }
 }
 
-fn boundaries_to_value(b: &Boundaries) -> Value {
+fn boundaries_to_value(b: &NestedArray) -> Value {
     match b {
-        Boundaries::Indices(indices) => {
+        NestedArray::Indices(indices) => {
             let arr = indices
                 .iter()
                 .map(|x| Value::Number(Number::from(*x as u64)))
                 .collect();
             Value::Array(arr)
         }
-        Boundaries::Nested(nested) => {
+        NestedArray::Nested(nested) => {
             let arr = nested.iter().map(boundaries_to_value).collect();
             Value::Array(arr)
         }
@@ -624,7 +627,7 @@ pub struct Geometry {
     pub lod: Option<String>,
     pub boundaries: Boundaries,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub semantics: Option<Value>,
+    pub semantics: Option<Semantics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub material: Option<HashMap<String, Material>>,
     #[serde(skip_serializing_if = "Option::is_none")]
