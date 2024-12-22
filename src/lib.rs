@@ -509,45 +509,6 @@ pub enum NestedArray {
     Nested(Vec<NestedArray>),
 }
 
-pub type Boundaries = NestedArray;
-pub type Semantics = NestedArray;
-
-impl Boundaries {
-    fn update_indices_recursively(&mut self, violdnew: &mut HashMap<usize, usize>) {
-        match self {
-            Boundaries::Indices(arr) => {
-                for index in arr {
-                    let old_idx = *index;
-                    let new_idx = {
-                        let len = violdnew.len();
-                        *violdnew.entry(old_idx as usize).or_insert_with(|| len)
-                    };
-                    *index = new_idx as u32;
-                }
-            }
-            Boundaries::Nested(nested_vec) => {
-                for sub in nested_vec {
-                    sub.update_indices_recursively(violdnew);
-                }
-            }
-        }
-    }
-    fn offset_geometry_boundaries(&mut self, offset: usize) {
-        match self {
-            Boundaries::Indices(indices) => {
-                for index in indices {
-                    *index += offset as u32;
-                }
-            }
-            Boundaries::Nested(nested) => {
-                for sub in nested {
-                    sub.offset_geometry_boundaries(offset);
-                }
-            }
-        }
-    }
-}
-
 impl Serialize for NestedArray {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -617,6 +578,64 @@ fn boundaries_to_value(b: &NestedArray) -> Value {
             Value::Array(arr)
         }
     }
+}
+
+pub type Boundaries = NestedArray;
+
+impl Boundaries {
+    fn update_indices_recursively(&mut self, violdnew: &mut HashMap<usize, usize>) {
+        match self {
+            Boundaries::Indices(arr) => {
+                for index in arr {
+                    let old_idx = *index;
+                    let new_idx = {
+                        let len = violdnew.len();
+                        *violdnew.entry(old_idx as usize).or_insert_with(|| len)
+                    };
+                    *index = new_idx as u32;
+                }
+            }
+            Boundaries::Nested(nested_vec) => {
+                for sub in nested_vec {
+                    sub.update_indices_recursively(violdnew);
+                }
+            }
+        }
+    }
+    fn offset_geometry_boundaries(&mut self, offset: usize) {
+        match self {
+            Boundaries::Indices(indices) => {
+                for index in indices {
+                    *index += offset as u32;
+                }
+            }
+            Boundaries::Nested(nested) => {
+                for sub in nested {
+                    sub.offset_geometry_boundaries(offset);
+                }
+            }
+        }
+    }
+}
+
+type SemanticsValues = NestedArray;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SemanticsSurface {
+    #[serde(rename = "type")]
+    thetype: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    children: Option<Vec<u32>>,
+    #[serde(flatten)]
+    other: serde_json::Value,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Semantics {
+    values: SemanticsValues,
+    surface: SemanticsSurface,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
