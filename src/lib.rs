@@ -618,10 +618,10 @@ impl Boundaries {
     }
 }
 
-type SemanticsValues = NestedArray;
+pub type SemanticsValues = NestedArray;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SemanticsSurface {
+pub struct SemanticsSurface {
     #[serde(rename = "type")]
     thetype: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -634,8 +634,8 @@ struct SemanticsSurface {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Semantics {
-    values: SemanticsValues,
-    surface: SemanticsSurface,
+    pub values: SemanticsValues,
+    pub surface: SemanticsSurface,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
