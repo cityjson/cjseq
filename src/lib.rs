@@ -635,7 +635,7 @@ pub struct SemanticsSurface {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Semantics {
     pub values: SemanticsValues,
-    pub surface: SemanticsSurface,
+    pub surface: Vec<SemanticsSurface>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
