@@ -623,13 +623,13 @@ pub type SemanticsValues = NestedArray;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticsSurface {
     #[serde(rename = "type")]
-    thetype: String,
+    pub thetype: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    parent: Option<u32>,
+    pub parent: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    children: Option<Vec<u32>>,
+    pub children: Option<Vec<u32>>,
     #[serde(flatten)]
-    other: serde_json::Value,
+    pub other: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
