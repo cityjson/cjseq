@@ -888,10 +888,10 @@ impl Geometry {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Vertex {
-    x: i64,
-    y: i64,
-    z: i64,
+pub struct Vertex {
+    pub x: i64,
+    pub y: i64,
+    pub z: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
