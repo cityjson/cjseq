@@ -887,13 +887,6 @@ impl Geometry {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Vertex {
-    pub x: i64,
-    pub y: i64,
-    pub z: i64,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transform {
     pub scale: Vec<f64>,
