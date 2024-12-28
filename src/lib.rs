@@ -462,6 +462,25 @@ pub struct CityObject {
 }
 
 impl CityObject {
+    pub fn new(
+        thetype: String,
+        geographical_extent: Option<Vec<f64>>,
+        attributes: Option<Value>,
+        geometry: Option<Vec<Geometry>>,
+        children: Option<Vec<String>>,
+        parents: Option<Vec<String>>,
+        other: Option<Value>,
+    ) -> Self {
+        CityObject {
+            thetype,
+            geographical_extent,
+            attributes,
+            geometry,
+            children,
+            parents,
+            other: other.unwrap_or(Value::Null),
+        }
+    }
     pub fn get_type(&self) -> String {
         self.thetype.clone()
     }
