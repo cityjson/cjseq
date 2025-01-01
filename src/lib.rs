@@ -1149,3 +1149,157 @@ impl Appearance {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Test cases derived from CityJSON specification v2.0.1
+    /// See: https://www.cityjson.org/specs/2.0.1/#semantics-of-geometric-primitives
+
+    /// MultiPoint: Single array of vertex indices
+    /// [v1, v2, v3, ...]
+    #[test]
+    fn test_multipoint_boundaries() {
+        let json_value = json!([2, 44, 0, 7]);
+        let boundaries = parse_boundaries_from_value(&json_value);
+        assert_eq!(boundaries, NestedArray::Indices(vec![2, 44, 0, 7]));
+    }
+
+    /// MultiLineString: Array of arrays, each inner array represents a linestring
+    /// [[v1, v2, v3, ...], [v1, v2, v3, ...], ...]
+    #[test]
+    fn test_multilinestring_boundaries() {
+        let json_value = json!([[2, 3, 5], [77, 55, 212]]);
+        let boundaries = parse_boundaries_from_value(&json_value);
+        assert_eq!(
+            boundaries,
+            NestedArray::Nested(vec![
+                NestedArray::Indices(vec![2, 3, 5]),
+                NestedArray::Indices(vec![77, 55, 212]),
+            ])
+        );
+    }
+
+    /// MultiSurface: Array of surfaces, each surface is an array of rings, each ring is an array of vertex indices
+    /// [[[v1, v2, v3, ...]], [[v1, v2, v3, ...]], ...]
+    /// The innermost array represents a ring (exterior or interior)
+    #[test]
+    fn test_multisurface_boundaries() {
+        let json_value = json!([[[0, 3, 2, 1]], [[4, 5, 6, 7]], [[0, 1, 5, 4]]]);
+        let boundaries = parse_boundaries_from_value(&json_value);
+        assert_eq!(
+            boundaries,
+            NestedArray::Nested(vec![
+                NestedArray::Nested(vec![NestedArray::Indices(vec![0, 3, 2, 1])]),
+                NestedArray::Nested(vec![NestedArray::Indices(vec![4, 5, 6, 7])]),
+                NestedArray::Nested(vec![NestedArray::Indices(vec![0, 1, 5, 4])]),
+            ])
+        );
+    }
+
+    /// Solid: Array of shells (exterior + optional interior), each shell is an array of surfaces
+    /// Each surface is an array of rings, each ring is an array of vertex indices
+    /// [
+    ///   [[[v1, v2, ...]], [[v1, v2, ...]], ...],  // exterior shell
+    ///   [[[v1, v2, ...]], [[v1, v2, ...]], ...]   // interior shell
+    /// ]
+    #[test]
+    fn test_solid_boundaries() {
+        let json_value = json!([
+            [
+                [[0, 3, 2, 1, 22]],
+                [[4, 5, 6, 7]],
+                [[0, 1, 5, 4]],
+                [[1, 2, 6, 5]]
+            ],
+            [
+                [[240, 243, 124]],
+                [[244, 246, 724]],
+                [[34, 414, 45]],
+                [[111, 246, 5]]
+            ]
+        ]);
+        let boundaries = parse_boundaries_from_value(&json_value);
+        assert_eq!(
+            boundaries,
+            NestedArray::Nested(vec![
+                NestedArray::Nested(vec![
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![0, 3, 2, 1, 22])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![4, 5, 6, 7])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![0, 1, 5, 4])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![1, 2, 6, 5])]),
+                ]),
+                NestedArray::Nested(vec![
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![240, 243, 124])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![244, 246, 724])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![34, 414, 45])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![111, 246, 5])]),
+                ]),
+            ])
+        );
+    }
+
+    /// CompositeSolid: Array of solids, each solid follows the Solid structure above
+    /// [
+    ///   [ // First solid
+    ///     [[[v1, v2, ...]], [[v1, v2, ...]], ...],  // exterior shell
+    ///     [[[v1, v2, ...]], [[v1, v2, ...]], ...]   // interior shell
+    ///   ],
+    ///   [ // Second solid
+    ///     [[[v1, v2, ...]], [[v1, v2, ...]], ...]   // only exterior shell
+    ///   ]
+    /// ]
+    #[test]
+    fn test_composite_solid_boundaries() {
+        let json_value = json!([
+            [
+                [
+                    [[0, 3, 2, 1, 22]],
+                    [[4, 5, 6, 7]],
+                    [[0, 1, 5, 4]],
+                    [[1, 2, 6, 5]]
+                ],
+                [
+                    [[240, 243, 124]],
+                    [[244, 246, 724]],
+                    [[34, 414, 45]],
+                    [[111, 246, 5]]
+                ]
+            ],
+            [[
+                [[666, 667, 668]],
+                [[74, 75, 76]],
+                [[880, 881, 885]],
+                [[111, 122, 226]]
+            ]]
+        ]);
+        let boundaries = parse_boundaries_from_value(&json_value);
+        assert_eq!(
+            boundaries,
+            NestedArray::Nested(vec![
+                NestedArray::Nested(vec![
+                    NestedArray::Nested(vec![
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![0, 3, 2, 1, 22])]),
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![4, 5, 6, 7])]),
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![0, 1, 5, 4])]),
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![1, 2, 6, 5])]),
+                    ]),
+                    NestedArray::Nested(vec![
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![240, 243, 124])]),
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![244, 246, 724])]),
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![34, 414, 45])]),
+                        NestedArray::Nested(vec![NestedArray::Indices(vec![111, 246, 5])]),
+                    ]),
+                ]),
+                NestedArray::Nested(vec![NestedArray::Nested(vec![
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![666, 667, 668])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![74, 75, 76])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![880, 881, 885])]),
+                    NestedArray::Nested(vec![NestedArray::Indices(vec![111, 122, 226])]),
+                ]),]),
+            ])
+        );
+    }
+}
