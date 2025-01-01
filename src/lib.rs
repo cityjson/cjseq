@@ -522,7 +522,7 @@ pub enum GeometryType {
     GeometryInstance,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NestedArray {
     Indices(Vec<u32>),
     Nested(Vec<NestedArray>),
