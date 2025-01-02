@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Error, Number, Value};
 use std::collections::HashMap;
 
@@ -522,84 +522,154 @@ pub enum GeometryType {
     GeometryInstance,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NestedArray {
-    Indices(Vec<u32>),
-    Nested(Vec<NestedArray>),
+pub trait JsonIndex: Clone + PartialEq + Eq + std::fmt::Debug {
+    /// Attempt to parse a `T` from the given `Value`.
+    /// Return `None` if parsing fails or if you want to skip certain cases.
+    fn from_value(v: &Value) -> Option<Self>;
+
+    /// Convert a `T` into a JSON `Value`.
+    fn to_value(&self) -> Value;
 }
 
-impl Serialize for NestedArray {
+/// Implement `JsonIndex` for a plain `u32`.
+/// - `null` is ignored (returns `None`).
+/// - Numeric values are cast to `u32` (watch out for possible negative or large values).
+impl JsonIndex for u32 {
+    fn from_value(v: &Value) -> Option<Self> {
+        if let Some(u) = v.as_u64() {
+            Some(u as u32)
+        } else if let Some(i) = v.as_i64() {
+            // You may want to check if `i` is negative, or out of u32 range.
+            Some(i as u32)
+        } else {
+            None
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Number(Number::from(*self as u64))
+    }
+}
+
+/// Implement `JsonIndex` for an `Option<u32>`.
+/// - `null` becomes `None`.
+/// - Numeric values become `Some(...)`.
+impl JsonIndex for Option<u32> {
+    fn from_value(v: &Value) -> Option<Self> {
+        if v.is_null() {
+            // JSON null -> None
+            Some(None)
+        } else if let Some(u) = v.as_u64() {
+            Some(Some(u as u32))
+        } else if let Some(i) = v.as_i64() {
+            Some(Some(i as u32))
+        } else {
+            None
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        match self {
+            Some(x) => Value::Number(Number::from(*x as u64)),
+            None => Value::Null,
+        }
+    }
+}
+
+/// Our nested structure, generic over `T`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NestedArray<T> {
+    Indices(Vec<T>),
+    Nested(Vec<NestedArray<T>>),
+}
+
+/// For convenience, define `Boundaries` as `NestedArray<u32>` (no null allowed).
+pub type Boundaries = NestedArray<u32>;
+/// For Semantics, define `SemanticsValues` as `NestedArray<Option<u32>>` (null allowed).
+pub type SemanticsValues = NestedArray<Option<u32>>;
+
+// ---------------------------------------------------------------------------
+// Custom Serialize/Deserialize for `NestedArray<T>`
+// where `T: JsonIndex` defines how to go from/to JSON numbers or null.
+// ---------------------------------------------------------------------------
+impl<T> Serialize for NestedArray<T>
+where
+    T: JsonIndex,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
-        boundaries_to_value(self).serialize(serializer)
+        nested_array_to_value(self).serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for NestedArray {
+impl<'de, T> Deserialize<'de> for NestedArray<T>
+where
+    T: JsonIndex,
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         let v = Value::deserialize(deserializer)?;
-        Ok(parse_boundaries_from_value(&v))
+        Ok(parse_nested_array(&v))
     }
 }
 
-fn parse_boundaries_from_value(v: &Value) -> NestedArray {
+// ---------------------------------------------------------------------------
+// Parsing from `serde_json::Value` into a `NestedArray<T>`
+// ---------------------------------------------------------------------------
+fn parse_nested_array<T: JsonIndex>(v: &Value) -> NestedArray<T> {
     match v {
         Value::Array(elems) => {
             if elems.is_empty() {
                 return NestedArray::Indices(Vec::new());
             }
-            match &elems[0] {
-                Value::Array(_) => {
-                    let mut nested = Vec::with_capacity(elems.len());
-                    for sub in elems {
-                        nested.push(parse_boundaries_from_value(sub));
+            // If the first element is itself an Array, assume it's "Nested"
+            if let Value::Array(_) = &elems[0] {
+                let mut nested = Vec::with_capacity(elems.len());
+                for sub in elems {
+                    nested.push(parse_nested_array(sub));
+                }
+                NestedArray::Nested(nested)
+            } else {
+                // Indices: parse each element via `T::from_value()`
+                let mut indices = Vec::with_capacity(elems.len());
+                for elem in elems {
+                    if let Some(val) = T::from_value(elem) {
+                        indices.push(val);
+                    } else {
+                        // If we can't parse, you could choose to skip or push a default.
+                        // Here we skip.
                     }
-                    NestedArray::Nested(nested)
                 }
-                Value::Number(_) => {
-                    let mut indices = Vec::with_capacity(elems.len());
-                    for num_val in elems {
-                        if let Some(u) = num_val.as_u64() {
-                            indices.push(u as u32);
-                        } else if let Some(i) = num_val.as_i64() {
-                            indices.push(i as u32);
-                        }
-                    }
-                    NestedArray::Indices(indices)
-                }
-                _ => {
-                    return NestedArray::Indices(Vec::new());
-                }
+                NestedArray::Indices(indices)
             }
         }
-        _ => {
-            return NestedArray::Indices(Vec::new());
-        }
+        // Not an array? Return an empty Indices array by default
+        _ => NestedArray::Indices(Vec::new()),
     }
 }
 
-fn boundaries_to_value(b: &NestedArray) -> Value {
-    match b {
-        NestedArray::Indices(indices) => {
-            let arr = indices
+// ---------------------------------------------------------------------------
+// Converting a `NestedArray<T>` to `serde_json::Value`
+// ---------------------------------------------------------------------------
+fn nested_array_to_value<T: JsonIndex>(na: &NestedArray<T>) -> Value {
+    match na {
+        NestedArray::Indices(vec_of_t) => {
+            let arr = vec_of_t.iter().map(|t| t.to_value()).collect();
+            Value::Array(arr)
+        }
+        NestedArray::Nested(vec_of_nested) => {
+            let arr = vec_of_nested
                 .iter()
-                .map(|x| Value::Number(Number::from(*x as u64)))
+                .map(|sub_na| nested_array_to_value(sub_na))
                 .collect();
             Value::Array(arr)
         }
-        NestedArray::Nested(nested) => {
-            let arr = nested.iter().map(boundaries_to_value).collect();
-            Value::Array(arr)
-        }
     }
 }
-
-pub type Boundaries = NestedArray;
 
 impl Boundaries {
     fn update_indices_recursively(&mut self, violdnew: &mut HashMap<usize, usize>) {
@@ -636,8 +706,6 @@ impl Boundaries {
         }
     }
 }
-
-pub type SemanticsValues = NestedArray;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SemanticsSurface {
@@ -1163,7 +1231,7 @@ mod tests {
     #[test]
     fn test_multipoint_boundaries() {
         let json_value = json!([2, 44, 0, 7]);
-        let boundaries = parse_boundaries_from_value(&json_value);
+        let boundaries = parse_nested_array(&json_value);
         assert_eq!(boundaries, NestedArray::Indices(vec![2, 44, 0, 7]));
     }
 
@@ -1172,7 +1240,7 @@ mod tests {
     #[test]
     fn test_multilinestring_boundaries() {
         let json_value = json!([[2, 3, 5], [77, 55, 212]]);
-        let boundaries = parse_boundaries_from_value(&json_value);
+        let boundaries = parse_nested_array(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1188,7 +1256,7 @@ mod tests {
     #[test]
     fn test_multisurface_boundaries() {
         let json_value = json!([[[0, 3, 2, 1]], [[4, 5, 6, 7]], [[0, 1, 5, 4]]]);
-        let boundaries = parse_boundaries_from_value(&json_value);
+        let boundaries = parse_nested_array(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1221,7 +1289,7 @@ mod tests {
                 [[111, 246, 5]]
             ]
         ]);
-        let boundaries = parse_boundaries_from_value(&json_value);
+        let boundaries = parse_nested_array(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1275,7 +1343,7 @@ mod tests {
                 [[111, 122, 226]]
             ]]
         ]);
-        let boundaries = parse_boundaries_from_value(&json_value);
+        let boundaries = parse_nested_array(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
