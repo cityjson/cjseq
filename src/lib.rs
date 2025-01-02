@@ -639,7 +639,7 @@ impl Boundaries {
 
 pub type SemanticsValues = NestedArray;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SemanticsSurface {
     #[serde(rename = "type")]
     pub thetype: String,
@@ -651,7 +651,7 @@ pub struct SemanticsSurface {
     pub other: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Semantics {
     pub values: SemanticsValues,
     pub surfaces: Vec<SemanticsSurface>,
