@@ -12,7 +12,7 @@ pub enum SortingStrategy {
     Hilbert,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CityJSON {
     #[serde(rename = "type")]
     pub thetype: String,
@@ -398,7 +398,7 @@ impl CityJSON {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CityJSONFeature {
     #[serde(rename = "type")]
     pub thetype: String,
@@ -442,7 +442,7 @@ impl CityJSONFeature {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CityObject {
     #[serde(rename = "type")]
     pub thetype: String,
@@ -725,7 +725,7 @@ pub struct Semantics {
     pub surfaces: Vec<SemanticsSurface>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Geometry {
     #[serde(rename = "type")]
     pub thetype: GeometryType,
@@ -974,7 +974,7 @@ impl Geometry {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Transform {
     pub scale: Vec<f64>,
     pub translate: Vec<f64>,
@@ -990,7 +990,7 @@ impl Transform {
 
 pub type GeographicalExtent = [f64; 6];
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Address {
     #[serde(rename = "thoroughfareNumber")]
     pub thoroughfare_number: i64,
@@ -1002,7 +1002,7 @@ pub struct Address {
     pub country: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PointOfContact {
     #[serde(rename = "contactName")]
     pub contact_name: String,
@@ -1031,7 +1031,7 @@ pub struct PointOfContact {
 /// - `{version}` designates the specific version of the CRS
 ///   (use "0" if there is no version)
 /// - `{code}` is the identifier for the specific coordinate reference system
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceSystem {
     pub base_url: String,
     pub authority: String,
@@ -1101,7 +1101,7 @@ impl<'de> Deserialize<'de> for ReferenceSystem {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Metadata {
     #[serde(rename = "geographicalExtent")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1121,14 +1121,14 @@ pub struct Metadata {
     pub title: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GeometryTemplates {
     pub templates: Vec<Geometry>,
     #[serde(rename = "vertices-templates")]
     pub vertices_templates: Value,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Material {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub values: Option<Value>,
@@ -1136,13 +1136,13 @@ pub struct Material {
     pub value: Option<usize>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Texture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub values: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Appearance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub materials: Option<Vec<Value>>,
