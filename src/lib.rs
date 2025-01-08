@@ -456,6 +456,8 @@ pub struct CityObject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub children_roles: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parents: Option<Vec<String>>,
     #[serde(flatten)]
     other: serde_json::Value,
@@ -468,6 +470,7 @@ impl CityObject {
         attributes: Option<Value>,
         geometry: Option<Vec<Geometry>>,
         children: Option<Vec<String>>,
+        children_roles: Option<Vec<String>>,
         parents: Option<Vec<String>>,
         other: Option<Value>,
     ) -> Self {
@@ -477,6 +480,7 @@ impl CityObject {
             attributes,
             geometry,
             children,
+            children_roles,
             parents,
             other: other.unwrap_or(Value::Null),
         }
