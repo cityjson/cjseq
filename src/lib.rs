@@ -448,7 +448,7 @@ pub struct CityObject {
     pub thetype: String,
     #[serde(rename = "geographicalExtent")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub geographical_extent: Option<Vec<f64>>,
+    pub geographical_extent: Option<GeographicalExtent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attributes: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -466,7 +466,7 @@ pub struct CityObject {
 impl CityObject {
     pub fn new(
         thetype: String,
-        geographical_extent: Option<Vec<f64>>,
+        geographical_extent: Option<GeographicalExtent>,
         attributes: Option<Value>,
         geometry: Option<Vec<Geometry>>,
         children: Option<Vec<String>>,
