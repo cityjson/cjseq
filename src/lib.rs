@@ -1203,14 +1203,14 @@ impl Validate for MaterialObject {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
-pub enum TextureType {
+pub enum TextFormat {
     Png,
     Jpg,
 }
 
-impl Default for TextureType {
+impl Default for TextFormat {
     fn default() -> Self {
-        TextureType::Jpg
+        TextFormat::Jpg
     }
 }
 
@@ -1226,7 +1226,7 @@ pub enum WrapMode {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum TextureTypeSemantic {
+pub enum TextType {
     Unknown,
     Specific,
     Typical,
@@ -1235,13 +1235,13 @@ pub enum TextureTypeSemantic {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct TextureObject {
     #[serde(rename = "type")]
-    pub texture_type: TextureType,
+    pub texture_format: TextFormat,
     pub image: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "wrapMode")]
     pub wrap_mode: Option<WrapMode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub texture_type_semantic: Option<TextureTypeSemantic>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "textureType")]
+    pub texture_type: Option<TextType>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "borderColor")]
     pub border_color: Option<[f64; 4]>,
 }
 
@@ -1600,7 +1600,7 @@ mod tests {
 
         // Test textures
         assert!(textures.len() == 5);
-        assert!(textures[0].texture_type == TextureType::Jpg);
+        assert!(textures[0].texture_format == TextFormat::Jpg);
         assert!(textures[0].image == "appearances/0320_2_12.jpg");
 
         // Test vertices-texture
@@ -1666,10 +1666,10 @@ mod tests {
 
         // Test adding first texture
         let tex1 = TextureObject {
-            texture_type: TextureType::Jpg,
+            texture_format: TextFormat::Jpg,
             image: "appearances/0320_2_12.jpg".to_string(),
             wrap_mode: None,
-            texture_type_semantic: None,
+            texture_type: None,
             border_color: None,
         };
         let index1 = appearance.add_texture(tex1.clone());
@@ -1681,10 +1681,10 @@ mod tests {
 
         // Test adding different texture
         let tex2 = TextureObject {
-            texture_type: TextureType::Jpg,
+            texture_format: TextFormat::Jpg,
             image: "appearances/0320_2_13.jpg".to_string(),
             wrap_mode: None,
-            texture_type_semantic: None,
+            texture_type: None,
             border_color: None,
         };
         let index3 = appearance.add_texture(tex2);
@@ -1767,10 +1767,10 @@ mod tests {
     #[test]
     fn test_texture_validation() {
         let valid_texture = TextureObject {
-            texture_type: TextureType::Jpg,
+            texture_format: TextFormat::Jpg,
             image: "test.jpg".to_string(),
             wrap_mode: Some(WrapMode::Wrap),
-            texture_type_semantic: Some(TextureTypeSemantic::Specific),
+            texture_type: Some(TextType::Specific),
             border_color: Some([0.1, 0.2, 0.3, 0.4]),
         };
         assert!(valid_texture.validate().is_ok());
