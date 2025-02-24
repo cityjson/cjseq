@@ -1453,4 +1453,94 @@ mod tests {
         assert!(appearance.default_theme_texture.is_none());
         assert!(appearance.default_theme_material.is_none());
     }
+
+    #[test]
+    fn test_add_material() {
+        let mut appearance = Appearance::new();
+
+        // Test adding first material
+        let mat1 = MaterialObject {
+            name: "roofandground".to_string(),
+            ambient_intensity: Some(0.2),
+            diffuse_color: Some([0.9, 0.1, 0.75]),
+            emissive_color: Some([0.9, 0.1, 0.75]),
+            specular_color: Some([0.9, 0.1, 0.75]),
+            shininess: Some(0.2),
+            transparency: Some(0.5),
+            is_smooth: Some(false),
+        };
+        let index1 = appearance.add_material(mat1.clone());
+        assert_eq!(index1, 0);
+
+        // Test adding duplicate material (should return same index)
+        let index2 = appearance.add_material(mat1.clone());
+        assert_eq!(index2, 0);
+
+        // Test adding different material
+        let mat2 = MaterialObject {
+            name: "wall".to_string(),
+            ambient_intensity: Some(0.4),
+            diffuse_color: Some([0.1, 0.1, 0.9]),
+            emissive_color: Some([0.1, 0.1, 0.9]),
+            specular_color: Some([0.9, 0.1, 0.75]),
+            shininess: Some(0.0),
+            transparency: Some(0.5),
+            is_smooth: Some(true),
+        };
+        let index3 = appearance.add_material(mat2);
+        assert_eq!(index3, 1);
+    }
+
+    #[test]
+    fn test_add_texture() {
+        let mut appearance = Appearance::new();
+
+        // Test adding first texture
+        let tex1 = TextureObject {
+            texture_type: "JPG".to_string(),
+            image: "appearances/0320_2_12.jpg".to_string(),
+            wrap_mode: None,
+            texture_type_semantic: None,
+            border_color: None,
+        };
+        let index1 = appearance.add_texture(tex1.clone());
+        assert_eq!(index1, 0);
+
+        // Test adding duplicate texture (should return same index)
+        let index2 = appearance.add_texture(tex1);
+        assert_eq!(index2, 0);
+
+        // Test adding different texture
+        let tex2 = TextureObject {
+            texture_type: "JPG".to_string(),
+            image: "appearances/0320_2_13.jpg".to_string(),
+            wrap_mode: None,
+            texture_type_semantic: None,
+            border_color: None,
+        };
+        let index3 = appearance.add_texture(tex2);
+        assert_eq!(index3, 1);
+    }
+
+    #[test]
+    fn test_add_vertices_texture() {
+        let mut appearance = Appearance::new();
+
+        // Test adding first set of vertices
+        let vertices1 = vec![[0.2517, 0.1739], [0.3155, 0.2015]];
+        appearance.add_vertices_texture(vertices1.clone());
+        assert_eq!(appearance.vertices_texture.as_ref().unwrap().len(), 2);
+
+        // Test adding more vertices
+        let vertices2 = vec![[0.2734, 0.3057], [0.2269, 0.2883]];
+        appearance.add_vertices_texture(vertices2);
+        assert_eq!(appearance.vertices_texture.as_ref().unwrap().len(), 4);
+
+        // Verify all vertices are present in correct order
+        let all_vertices = appearance.vertices_texture.unwrap();
+        assert_eq!(all_vertices[0], [0.2517, 0.1739]);
+        assert_eq!(all_vertices[1], [0.3155, 0.2015]);
+        assert_eq!(all_vertices[2], [0.2734, 0.3057]);
+        assert_eq!(all_vertices[3], [0.2269, 0.2883]);
+    }
 }
