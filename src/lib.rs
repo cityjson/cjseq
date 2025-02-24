@@ -1135,19 +1135,19 @@ pub struct GeometryTemplates {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct MaterialObject {
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "ambientIntensity")]
     pub ambient_intensity: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "diffuseColor")]
     pub diffuse_color: Option<[f64; 3]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "emissiveColor")]
     pub emissive_color: Option<[f64; 3]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "specularColor")]
     pub specular_color: Option<[f64; 3]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "shininess")]
     pub shininess: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "transparency")]
     pub transparency: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "isSmooth")]
     pub is_smooth: Option<bool>,
 }
 
@@ -1257,6 +1257,8 @@ impl Appearance {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
+    use std::io::{BufRead, BufReader};
 
     /// Test cases derived from CityJSON specification v2.0.1
     /// See: https://www.cityjson.org/specs/2.0.1/#semantics-of-geometric-primitives
@@ -1404,5 +1406,51 @@ mod tests {
                 ]),]),
             ])
         );
+    }
+
+    #[test]
+    fn test_appearance_parsing() {
+        // Read the test fixture. The file is Rotterdams data.
+        let file =
+            fs::File::open("tests/fixtures/appearance.jsonl").expect("Unable to read test fixture");
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader
+            .lines()
+            .map(|line| line.expect("Failed to read line"))
+            .collect();
+
+        // Skip first line (CityJSON object) and use second line (CityJSONFeature)
+        let feature: CityJSONFeature = serde_json::from_str(&lines[1]).unwrap();
+
+        // Test appearance exists
+        let appearance = feature.appearance.unwrap();
+
+        let materials = appearance.materials.unwrap();
+        let textures = appearance.textures.unwrap();
+        let vertices_tex = appearance.vertices_texture.unwrap();
+
+        // Test textures
+        assert!(textures.len() == 5);
+        assert!(textures[0].texture_type == "JPG");
+        assert!(textures[0].image == "appearances/0320_2_12.jpg");
+
+        // Test vertices-texture
+        assert!(vertices_tex.len() == 30);
+        assert_eq!(vertices_tex[0], [0.2517, 0.1739]);
+
+        // Test materials
+        assert!(materials.len() == 2);
+        assert_eq!(materials[0].name, "roofandground");
+        assert_eq!(materials[0].ambient_intensity, Some(0.2000));
+        assert_eq!(materials[0].diffuse_color, Some([0.9000, 0.1000, 0.7500]));
+        assert_eq!(materials[0].emissive_color, Some([0.9000, 0.1000, 0.7500]));
+        assert_eq!(materials[0].specular_color, Some([0.9, 0.1, 0.75]));
+        assert_eq!(materials[0].shininess, Some(0.2));
+        assert_eq!(materials[0].transparency, Some(0.5));
+        assert_eq!(materials[0].is_smooth, Some(false));
+
+        // Verify optional fields are None
+        assert!(appearance.default_theme_texture.is_none());
+        assert!(appearance.default_theme_material.is_none());
     }
 }
