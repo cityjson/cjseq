@@ -810,71 +810,78 @@ impl Geometry {
                         GeometryType::MultiPoint | GeometryType::MultiLineString => (),
                         GeometryType::MultiSurface | GeometryType::CompositeSurface => {
                             if mat.values.is_some() {
-                                let a: Vec<Option<usize>> =
-                                    serde_json::from_value(mat.values.take().into()).unwrap();
-                                let mut a2 = a.clone();
-                                for (i, x) in a.iter().enumerate() {
-                                    if x.is_some() {
-                                        let y2 = m_oldnew.get(&x.unwrap());
-                                        if y2.is_none() {
-                                            let l = m_oldnew.len();
-                                            m_oldnew.insert(x.unwrap(), l);
-                                            a2[i] = Some(l);
-                                        } else {
-                                            let y2 = y2.unwrap();
-                                            a2[i] = Some(*y2);
+                                if let Some(MaterialValues::Surface(values)) = mat.values.take() {
+                                    let mut new_values = values.clone();
+                                    for (i, x) in values.iter().enumerate() {
+                                        if let Some(old_idx) = x {
+                                            let new_idx = {
+                                                let y2 = m_oldnew.get(old_idx);
+                                                if y2.is_none() {
+                                                    let l = m_oldnew.len();
+                                                    m_oldnew.insert(*old_idx, l);
+                                                    l
+                                                } else {
+                                                    *y2.unwrap()
+                                                }
+                                            };
+                                            new_values[i] = Some(new_idx);
                                         }
                                     }
+                                    mat.values = Some(MaterialValues::Surface(new_values));
                                 }
-                                mat.values = Some(serde_json::to_value(&a2).unwrap());
                             }
                         }
                         GeometryType::Solid => {
                             if mat.values.is_some() {
-                                let a: Vec<Vec<Option<usize>>> =
-                                    serde_json::from_value(mat.values.take().into()).unwrap();
-                                let mut a2 = a.clone();
-                                for (i, x) in a.iter().enumerate() {
-                                    for (j, y) in x.iter().enumerate() {
-                                        if y.is_some() {
-                                            let y2 = m_oldnew.get(&y.unwrap());
-                                            if y2.is_none() {
-                                                let l = m_oldnew.len();
-                                                m_oldnew.insert(y.unwrap(), l);
-                                                a2[i][j] = Some(l);
-                                            } else {
-                                                let y2 = y2.unwrap();
-                                                a2[i][j] = Some(*y2);
+                                if let Some(MaterialValues::Solid(values)) = mat.values.take() {
+                                    let mut new_values = values.clone();
+                                    for (i, shell) in values.iter().enumerate() {
+                                        for (j, x) in shell.iter().enumerate() {
+                                            if let Some(old_idx) = x {
+                                                let new_idx = {
+                                                    let y2 = m_oldnew.get(old_idx);
+                                                    if y2.is_none() {
+                                                        let l = m_oldnew.len();
+                                                        m_oldnew.insert(*old_idx, l);
+                                                        l
+                                                    } else {
+                                                        *y2.unwrap()
+                                                    }
+                                                };
+                                                new_values[i][j] = Some(new_idx);
                                             }
                                         }
                                     }
+                                    mat.values = Some(MaterialValues::Solid(new_values));
                                 }
-                                mat.values = Some(serde_json::to_value(&a2).unwrap());
                             }
                         }
                         GeometryType::MultiSolid | GeometryType::CompositeSolid => {
                             if mat.values.is_some() {
-                                let a: Vec<Vec<Vec<Option<usize>>>> =
-                                    serde_json::from_value(mat.values.take().into()).unwrap();
-                                let mut a2 = a.clone();
-                                for (i, x) in a.iter().enumerate() {
-                                    for (j, y) in x.iter().enumerate() {
-                                        for (k, z) in y.iter().enumerate() {
-                                            if z.is_some() {
-                                                let y2 = m_oldnew.get(&z.unwrap());
-                                                if y2.is_none() {
-                                                    let l = m_oldnew.len();
-                                                    m_oldnew.insert(z.unwrap(), l);
-                                                    a2[i][j][k] = Some(l);
-                                                } else {
-                                                    let y2 = y2.unwrap();
-                                                    a2[i][j][k] = Some(*y2);
+                                if let Some(MaterialValues::MultiSolid(values)) = mat.values.take()
+                                {
+                                    let mut new_values = values.clone();
+                                    for (i, solid) in values.iter().enumerate() {
+                                        for (j, shell) in solid.iter().enumerate() {
+                                            for (k, x) in shell.iter().enumerate() {
+                                                if let Some(old_idx) = x {
+                                                    let new_idx = {
+                                                        let y2 = m_oldnew.get(old_idx);
+                                                        if y2.is_none() {
+                                                            let l = m_oldnew.len();
+                                                            m_oldnew.insert(*old_idx, l);
+                                                            l
+                                                        } else {
+                                                            *y2.unwrap()
+                                                        }
+                                                    };
+                                                    new_values[i][j][k] = Some(new_idx);
                                                 }
                                             }
                                         }
                                     }
+                                    mat.values = Some(MaterialValues::MultiSolid(new_values));
                                 }
-                                mat.values = Some(serde_json::to_value(&a2).unwrap());
                             }
                         }
                         GeometryType::GeometryInstance => todo!(),
@@ -896,78 +903,79 @@ impl Geometry {
                 for (_key, tex) in &mut *x {
                     match self.thetype {
                         GeometryType::MultiSurface | GeometryType::CompositeSurface => {
-                            let a: Vec<Vec<Vec<Option<usize>>>> =
-                                serde_json::from_value(tex.values.take().into()).unwrap();
-                            let mut a2 = a.clone();
-                            for (i, x) in a.iter().enumerate() {
-                                for (j, y) in x.iter().enumerate() {
-                                    for (k, z) in y.iter().enumerate() {
-                                        if z.is_some() {
-                                            let thevalue: usize = z.unwrap();
-                                            if k == 0 {
-                                                let y2 = t_oldnew.get(&thevalue);
-                                                if y2.is_none() {
-                                                    let l = t_oldnew.len();
-                                                    t_oldnew.insert(thevalue, l);
-                                                    a2[i][j][k] = Some(l);
+                            if let TextureValues::Surface(values) =
+                                std::mem::replace(&mut tex.values, TextureValues::Surface(vec![]))
+                            {
+                                let mut new_values = values.clone();
+                                for (i, surface) in values.iter().enumerate() {
+                                    for (j, ring) in surface.iter().enumerate() {
+                                        for (k, value) in ring.iter().enumerate() {
+                                            if let Some(old_idx) = value {
+                                                let new_idx = if k == 0 {
+                                                    let y2 = t_oldnew.get(old_idx);
+                                                    if y2.is_none() {
+                                                        let l = t_oldnew.len();
+                                                        t_oldnew.insert(*old_idx, l);
+                                                        l
+                                                    } else {
+                                                        *y2.unwrap()
+                                                    }
                                                 } else {
-                                                    let y2 = y2.unwrap();
-                                                    a2[i][j][k] = Some(*y2);
-                                                }
-                                            } else {
-                                                let y2 = t_v_oldnew.get(&thevalue);
-                                                if y2.is_none() {
-                                                    let l = t_v_oldnew.len();
-                                                    t_v_oldnew.insert(thevalue, l + offset);
-                                                    a2[i][j][k] = Some(l);
-                                                } else {
-                                                    let y2 = y2.unwrap();
-                                                    a2[i][j][k] = Some(*y2);
-                                                }
+                                                    let y2 = t_v_oldnew.get(old_idx);
+                                                    if y2.is_none() {
+                                                        let l = t_v_oldnew.len();
+                                                        t_v_oldnew.insert(*old_idx, l + offset);
+                                                        l
+                                                    } else {
+                                                        *y2.unwrap()
+                                                    }
+                                                };
+                                                new_values[i][j][k] = Some(new_idx);
                                             }
                                         }
                                     }
                                 }
+                                tex.values = TextureValues::Surface(new_values);
                             }
-                            tex.values = serde_json::to_value(&a2).unwrap();
                         }
                         GeometryType::Solid => {
-                            let a: Vec<Vec<Vec<Vec<Option<usize>>>>> =
-                                serde_json::from_value(tex.values.take().into()).unwrap();
-                            let mut a2 = a.clone();
-                            for (i, x) in a.iter().enumerate() {
-                                for (j, y) in x.iter().enumerate() {
-                                    for (k, z) in y.iter().enumerate() {
-                                        for (l, zz) in z.iter().enumerate() {
-                                            if zz.is_some() {
-                                                let thevalue: usize = zz.unwrap();
-                                                if l == 0 {
-                                                    let y2 = t_oldnew.get(&thevalue);
-                                                    if y2.is_none() {
-                                                        let l2 = t_oldnew.len();
-                                                        t_oldnew.insert(thevalue, l2);
-                                                        a2[i][j][k][l] = Some(l2);
+                            if let TextureValues::Solid(values) =
+                                std::mem::replace(&mut tex.values, TextureValues::Solid(vec![]))
+                            {
+                                let mut new_values = values.clone();
+                                for (i, shell) in values.iter().enumerate() {
+                                    for (j, surface) in shell.iter().enumerate() {
+                                        for (k, ring) in surface.iter().enumerate() {
+                                            for (l, value) in ring.iter().enumerate() {
+                                                if let Some(old_idx) = value {
+                                                    let new_idx = if l == 0 {
+                                                        let y2 = t_oldnew.get(old_idx);
+                                                        if y2.is_none() {
+                                                            let l2 = t_oldnew.len();
+                                                            t_oldnew.insert(*old_idx, l2);
+                                                            l2
+                                                        } else {
+                                                            *y2.unwrap()
+                                                        }
                                                     } else {
-                                                        let y2 = y2.unwrap();
-                                                        a2[i][j][k][l] = Some(*y2);
-                                                    }
-                                                } else {
-                                                    let y2 = t_v_oldnew.get(&thevalue);
-                                                    if y2.is_none() {
-                                                        let l2 = t_v_oldnew.len();
-                                                        t_v_oldnew.insert(thevalue, l2 + offset);
-                                                        a2[i][j][k][l] = Some(l2);
-                                                    } else {
-                                                        let y2 = y2.unwrap();
-                                                        a2[i][j][k][l] = Some(*y2);
-                                                    }
+                                                        let y2 = t_v_oldnew.get(old_idx);
+                                                        if y2.is_none() {
+                                                            let l2 = t_v_oldnew.len();
+                                                            t_v_oldnew
+                                                                .insert(*old_idx, l2 + offset);
+                                                            l2
+                                                        } else {
+                                                            *y2.unwrap()
+                                                        }
+                                                    };
+                                                    new_values[i][j][k][l] = Some(new_idx);
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                tex.values = TextureValues::Solid(new_values);
                             }
-                            tex.values = serde_json::to_value(&a2).unwrap();
                         }
                         _ => todo!(),
                     }
@@ -1132,6 +1140,10 @@ pub struct GeometryTemplates {
     pub vertices_templates: Value,
 }
 
+pub trait Validate {
+    fn validate(&self) -> Result<(), String>;
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct MaterialObject {
     pub name: String,
@@ -1151,30 +1163,177 @@ pub struct MaterialObject {
     pub is_smooth: Option<bool>,
 }
 
+impl Validate for MaterialObject {
+    fn validate(&self) -> Result<(), String> {
+        if let Some(intensity) = self.ambient_intensity {
+            if !(0.0..=1.0).contains(&intensity) {
+                return Err("ambient_intensity must be between 0.0 and 1.0".to_string());
+            }
+        }
+
+        for (name, color) in [
+            ("diffuse_color", &self.diffuse_color),
+            ("emissive_color", &self.emissive_color),
+            ("specular_color", &self.specular_color),
+        ] {
+            if let Some(c) = color {
+                for &v in c.iter() {
+                    if !(0.0..=1.0).contains(&v) {
+                        return Err(format!("{} values must be between 0.0 and 1.0", name));
+                    }
+                }
+            }
+        }
+
+        if let Some(shininess) = self.shininess {
+            if !(0.0..=1.0).contains(&shininess) {
+                return Err("shininess must be between 0.0 and 1.0".to_string());
+            }
+        }
+
+        if let Some(transparency) = self.transparency {
+            if !(0.0..=1.0).contains(&transparency) {
+                return Err("transparency must be between 0.0 and 1.0".to_string());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum TextureType {
+    Png,
+    Jpg,
+}
+
+impl Default for TextureType {
+    fn default() -> Self {
+        TextureType::Jpg
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum WrapMode {
+    None,
+    Wrap,
+    Mirror,
+    Clamp,
+    Border,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TextureTypeSemantic {
+    Unknown,
+    Specific,
+    Typical,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct TextureObject {
     #[serde(rename = "type")]
-    pub texture_type: String, // "PNG" or "JPG"
+    pub texture_type: TextureType,
     pub image: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wrap_mode: Option<String>, // "none", "wrap", "mirror", "clamp", "border"
+    pub wrap_mode: Option<WrapMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub texture_type_semantic: Option<String>, // "unknown", "specific", "typical"
+    pub texture_type_semantic: Option<TextureTypeSemantic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border_color: Option<[f64; 4]>,
+}
+
+impl Validate for TextureObject {
+    fn validate(&self) -> Result<(), String> {
+        if let Some(colors) = &self.border_color {
+            for (i, &c) in colors.iter().enumerate() {
+                if !(0.0..=1.0).contains(&c) {
+                    return Err(format!("border_color[{}] must be between 0.0 and 1.0", i));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub type MaterialSurfaceValues = Vec<Option<usize>>;
+pub type MaterialSolidValues = Vec<Vec<Option<usize>>>;
+pub type MaterialMultiSolidValues = Vec<Vec<Vec<Option<usize>>>>;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum MaterialValues {
+    Surface(MaterialSurfaceValues),
+    Solid(MaterialSolidValues),
+    MultiSolid(MaterialMultiSolidValues),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MaterialReference {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Value>, // Nested array structure depends on geometry type
+    pub values: Option<MaterialValues>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<usize>, // Single material index
+    pub value: Option<usize>,
+}
+
+impl MaterialReference {
+    pub fn new_surface(values: Option<MaterialSurfaceValues>) -> Self {
+        Self {
+            values: values.map(MaterialValues::Surface),
+            value: None,
+        }
+    }
+
+    pub fn new_solid(values: Option<MaterialSolidValues>) -> Self {
+        Self {
+            values: values.map(MaterialValues::Solid),
+            value: None,
+        }
+    }
+
+    pub fn new_multi_solid(values: Option<MaterialMultiSolidValues>) -> Self {
+        Self {
+            values: values.map(MaterialValues::MultiSolid),
+            value: None,
+        }
+    }
+
+    pub fn new_single(value: usize) -> Self {
+        Self {
+            values: None,
+            value: Some(value),
+        }
+    }
+}
+
+pub type TextureSurfaceValues = Vec<Vec<Vec<Option<usize>>>>; // [surfaces][rings][texture_idx + uv_indices]
+pub type TextureSolidValues = Vec<Vec<Vec<Vec<Option<usize>>>>>; // [shells][surfaces][rings][texture_idx + uv_indices]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum TextureValues {
+    Surface(TextureSurfaceValues),
+    Solid(TextureSolidValues),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TextureReference {
-    pub values: Value, // Nested array structure depends on geometry type
+    pub values: TextureValues,
+}
+
+impl TextureReference {
+    pub fn new_surface(values: TextureSurfaceValues) -> Self {
+        Self {
+            values: TextureValues::Surface(values),
+        }
+    }
+
+    pub fn new_solid(values: TextureSolidValues) -> Self {
+        Self {
+            values: TextureValues::Solid(values),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -1206,6 +1365,11 @@ impl Appearance {
     }
 
     fn add_material(&mut self, value: MaterialObject) -> usize {
+        // Validate material before adding
+        if let Err(e) = value.validate() {
+            panic!("Invalid material: {}", e);
+        }
+
         match &mut self.materials {
             Some(x) => match x.iter().position(|e| e.name == value.name) {
                 Some(y) => y,
@@ -1224,6 +1388,11 @@ impl Appearance {
     }
 
     fn add_texture(&mut self, value: TextureObject) -> usize {
+        // Validate texture before adding
+        if let Err(e) = value.validate() {
+            panic!("Invalid texture: {}", e);
+        }
+
         match &mut self.textures {
             Some(x) => match x.iter().position(|e| e.image == value.image) {
                 Some(y) => y,
@@ -1431,7 +1600,7 @@ mod tests {
 
         // Test textures
         assert!(textures.len() == 5);
-        assert!(textures[0].texture_type == "JPG");
+        assert!(textures[0].texture_type == TextureType::Jpg);
         assert!(textures[0].image == "appearances/0320_2_12.jpg");
 
         // Test vertices-texture
@@ -1497,7 +1666,7 @@ mod tests {
 
         // Test adding first texture
         let tex1 = TextureObject {
-            texture_type: "JPG".to_string(),
+            texture_type: TextureType::Jpg,
             image: "appearances/0320_2_12.jpg".to_string(),
             wrap_mode: None,
             texture_type_semantic: None,
@@ -1512,7 +1681,7 @@ mod tests {
 
         // Test adding different texture
         let tex2 = TextureObject {
-            texture_type: "JPG".to_string(),
+            texture_type: TextureType::Jpg,
             image: "appearances/0320_2_13.jpg".to_string(),
             wrap_mode: None,
             texture_type_semantic: None,
@@ -1542,5 +1711,80 @@ mod tests {
         assert_eq!(all_vertices[1], [0.3155, 0.2015]);
         assert_eq!(all_vertices[2], [0.2734, 0.3057]);
         assert_eq!(all_vertices[3], [0.2269, 0.2883]);
+    }
+
+    #[test]
+    fn test_material_validation() {
+        let valid_material = MaterialObject {
+            name: "test".to_string(),
+            ambient_intensity: Some(0.5),
+            diffuse_color: Some([0.1, 0.2, 0.3]),
+            emissive_color: Some([0.4, 0.5, 0.6]),
+            specular_color: Some([0.7, 0.8, 0.9]),
+            shininess: Some(0.4),
+            transparency: Some(0.3),
+            is_smooth: Some(true),
+        };
+        assert!(valid_material.validate().is_ok());
+
+        let invalid_ambient = MaterialObject {
+            ambient_intensity: Some(1.5),
+            ..valid_material.clone()
+        };
+        assert!(invalid_ambient.validate().is_err());
+
+        let invalid_diffuse = MaterialObject {
+            diffuse_color: Some([-0.1, 0.5, 1.2]),
+            ..valid_material.clone()
+        };
+        assert!(invalid_diffuse.validate().is_err());
+
+        let invalid_emissive = MaterialObject {
+            emissive_color: Some([0.5, 1.5, 0.5]),
+            ..valid_material.clone()
+        };
+        assert!(invalid_emissive.validate().is_err());
+
+        let invalid_specular = MaterialObject {
+            specular_color: Some([0.5, 0.5, 1.5]),
+            ..valid_material.clone()
+        };
+        assert!(invalid_specular.validate().is_err());
+
+        let invalid_shininess = MaterialObject {
+            shininess: Some(2.0),
+            ..valid_material.clone()
+        };
+        assert!(invalid_shininess.validate().is_err());
+
+        let invalid_transparency = MaterialObject {
+            transparency: Some(-0.5),
+            ..valid_material.clone()
+        };
+        assert!(invalid_transparency.validate().is_err());
+    }
+
+    #[test]
+    fn test_texture_validation() {
+        let valid_texture = TextureObject {
+            texture_type: TextureType::Jpg,
+            image: "test.jpg".to_string(),
+            wrap_mode: Some(WrapMode::Wrap),
+            texture_type_semantic: Some(TextureTypeSemantic::Specific),
+            border_color: Some([0.1, 0.2, 0.3, 0.4]),
+        };
+        assert!(valid_texture.validate().is_ok());
+
+        let invalid_border_color = TextureObject {
+            border_color: Some([-0.1, 0.5, 1.2, 0.5]),
+            ..valid_texture.clone()
+        };
+        assert!(invalid_border_color.validate().is_err());
+
+        let invalid_border_color_2 = TextureObject {
+            border_color: Some([0.5, 0.5, 0.5, 1.5]),
+            ..valid_texture.clone()
+        };
+        assert!(invalid_border_color_2.validate().is_err());
     }
 }
