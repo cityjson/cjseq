@@ -101,8 +101,8 @@ impl CityJSON {
                     acjf.default_theme_texture = a.default_theme_texture.clone();
                     if a.materials.is_some() {
                         let am = a.materials.as_ref().unwrap();
-                        let mut mats2: Vec<Value> = Vec::new();
-                        mats2.resize(m_oldnew.len(), json!(null));
+                        let mut mats2: Vec<MaterialObject> = Vec::new();
+                        mats2.resize_with(m_oldnew.len(), Default::default);
                         for (old, new) in &m_oldnew {
                             mats2[*new] = am[*old].clone();
                         }
@@ -110,8 +110,8 @@ impl CityJSON {
                     }
                     if a.textures.is_some() {
                         let at = a.textures.as_ref().unwrap();
-                        let mut texs2: Vec<Value> = Vec::new();
-                        texs2.resize(t_oldnew.len(), json!(null));
+                        let mut texs2: Vec<TextureObject> = Vec::new();
+                        texs2.resize(t_oldnew.len(), Default::default());
                         for (old, new) in &t_oldnew {
                             texs2[*new] = at[*old].clone();
                         }
@@ -119,8 +119,8 @@ impl CityJSON {
                     }
                     if a.vertices_texture.is_some() {
                         let atv = a.vertices_texture.as_ref().unwrap();
-                        let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
-                        t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+                        let mut t_new_vertices: Vec<[f64; 2]> = Vec::new();
+                        t_new_vertices.resize(t_v_oldnew.len(), [0.0, 0.0]);
                         for (old, new) in &t_v_oldnew {
                             t_new_vertices[*new] = atv[*old].clone();
                         }
@@ -195,8 +195,8 @@ impl CityJSON {
             acjf.default_theme_texture = a.default_theme_texture.clone();
             if a.materials.is_some() {
                 let am = a.materials.as_ref().unwrap();
-                let mut mats2: Vec<Value> = Vec::new();
-                mats2.resize(m_oldnew.len(), json!(null));
+                let mut mats2: Vec<MaterialObject> = Vec::new();
+                mats2.resize(m_oldnew.len(), Default::default());
                 for (old, new) in &m_oldnew {
                     mats2[*new] = am[*old].clone();
                 }
@@ -204,8 +204,8 @@ impl CityJSON {
             }
             if a.textures.is_some() {
                 let at = a.textures.as_ref().unwrap();
-                let mut texs2: Vec<Value> = Vec::new();
-                texs2.resize(t_oldnew.len(), json!(null));
+                let mut texs2: Vec<TextureObject> = Vec::new();
+                texs2.resize(t_oldnew.len(), Default::default());
                 for (old, new) in &t_oldnew {
                     texs2[*new] = at[*old].clone();
                 }
@@ -213,8 +213,8 @@ impl CityJSON {
             }
             if a.vertices_texture.is_some() {
                 let atv = a.vertices_texture.as_ref().unwrap();
-                let mut t_new_vertices: Vec<Vec<f64>> = Vec::new();
-                t_new_vertices.resize(t_v_oldnew.len(), vec![]);
+                let mut t_new_vertices: Vec<[f64; 2]> = Vec::new();
+                t_new_vertices.resize(t_v_oldnew.len(), [0.0, 0.0]);
                 for (old, new) in &t_v_oldnew {
                     t_new_vertices[*new] = atv[*old].clone();
                 }
@@ -362,7 +362,7 @@ impl CityJSON {
     fn add_vertices(&mut self, v: &mut Vec<Vec<i64>>) {
         self.vertices.append(v);
     }
-    fn add_vertices_texture(&mut self, vs: Vec<Vec<f64>>) {
+    fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
         match &mut self.appearance {
             Some(x) => x.add_vertices_texture(vs),
             None => {
@@ -372,7 +372,7 @@ impl CityJSON {
             }
         };
     }
-    fn add_material(&mut self, jm: Value) -> usize {
+    fn add_material(&mut self, jm: MaterialObject) -> usize {
         let re = match &mut self.appearance {
             Some(x) => x.add_material(jm),
             None => {
@@ -384,7 +384,7 @@ impl CityJSON {
         };
         re
     }
-    fn add_texture(&mut self, jm: Value) -> usize {
+    fn add_texture(&mut self, jm: TextureObject) -> usize {
         let re = match &mut self.appearance {
             Some(x) => x.add_texture(jm),
             None => {
@@ -739,14 +739,14 @@ pub struct Geometry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantics: Option<Semantics>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub material: Option<HashMap<String, Material>>,
+    pub material: Option<HashMap<String, MaterialReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub texture: Option<HashMap<String, Texture>>,
+    pub texture: Option<HashMap<String, TextureReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub template: Option<usize>,
     #[serde(rename = "transformationMatrix")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transformation_matrix: Option<Value>,
+    pub transformation_matrix: Option<[f64; 16]>, // 4x4 matrix stored row-by-row
 }
 impl Geometry {
     fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
@@ -929,7 +929,7 @@ impl Geometry {
                                     }
                                 }
                             }
-                            tex.values = Some(serde_json::to_value(&a2).unwrap());
+                            tex.values = serde_json::to_value(&a2).unwrap();
                         }
                         GeometryType::Solid => {
                             let a: Vec<Vec<Vec<Vec<Option<usize>>>>> =
@@ -967,7 +967,7 @@ impl Geometry {
                                     }
                                 }
                             }
-                            tex.values = Some(serde_json::to_value(&a2).unwrap());
+                            tex.values = serde_json::to_value(&a2).unwrap();
                         }
                         _ => todo!(),
                     }
@@ -1132,29 +1132,60 @@ pub struct GeometryTemplates {
     pub vertices_templates: Value,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Material {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct MaterialObject {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "ambientIntensity")]
+    pub ambient_intensity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "diffuseColor")]
+    pub diffuse_color: Option<[f64; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "emissiveColor")]
+    pub emissive_color: Option<[f64; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "specularColor")]
+    pub specular_color: Option<[f64; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "shininess")]
+    pub shininess: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "transparency")]
+    pub transparency: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "isSmooth")]
+    pub is_smooth: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct TextureObject {
+    #[serde(rename = "type")]
+    pub texture_type: String, // "PNG" or "JPG"
+    pub image: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Value>,
+    pub wrap_mode: Option<String>, // "none", "wrap", "mirror", "clamp", "border"
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<usize>,
+    pub texture_type_semantic: Option<String>, // "unknown", "specific", "typical"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_color: Option<[f64; 4]>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Texture {
+pub struct MaterialReference {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Value>,
+    pub values: Option<Value>, // Nested array structure depends on geometry type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<usize>, // Single material index
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct TextureReference {
+    pub values: Value, // Nested array structure depends on geometry type
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Appearance {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub materials: Option<Vec<Value>>,
+    pub materials: Option<Vec<MaterialObject>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub textures: Option<Vec<Value>>,
+    pub textures: Option<Vec<TextureObject>>,
     #[serde(rename = "vertices-texture")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vertices_texture: Option<Vec<Vec<f64>>>,
+    pub vertices_texture: Option<Vec<[f64; 2]>>, // Array of [u,v] coordinates
     #[serde(rename = "default-theme-texture")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_theme_texture: Option<String>,
@@ -1162,6 +1193,7 @@ pub struct Appearance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_theme_material: Option<String>,
 }
+
 impl Appearance {
     fn new() -> Self {
         Appearance {
@@ -1172,53 +1204,52 @@ impl Appearance {
             default_theme_material: None,
         }
     }
-    fn add_material(&mut self, jm: Value) -> usize {
-        let re = match &mut self.materials {
-            Some(x) => match x.iter().position(|e| *e == jm) {
+
+    fn add_material(&mut self, value: MaterialObject) -> usize {
+        match &mut self.materials {
+            Some(x) => match x.iter().position(|e| e.name == value.name) {
                 Some(y) => y,
                 None => {
-                    x.push(jm);
+                    x.push(value);
                     x.len() - 1
                 }
             },
             None => {
-                let mut ls: Vec<Value> = Vec::new();
-                ls.push(jm);
+                let mut ls = Vec::new();
+                ls.push(value);
                 self.materials = Some(ls);
                 0
             }
-        };
-        re
+        }
     }
-    fn add_texture(&mut self, jm: Value) -> usize {
-        let re = match &mut self.textures {
-            Some(x) => match x.iter().position(|e| *e == jm) {
+
+    fn add_texture(&mut self, value: TextureObject) -> usize {
+        match &mut self.textures {
+            Some(x) => match x.iter().position(|e| e.image == value.image) {
                 Some(y) => y,
                 None => {
-                    x.push(jm);
+                    x.push(value);
                     x.len() - 1
                 }
             },
             None => {
-                let mut ls: Vec<Value> = Vec::new();
-                ls.push(jm);
+                let mut ls = Vec::new();
+                ls.push(value);
                 self.textures = Some(ls);
                 0
             }
-        };
-        re
+        }
     }
-    fn add_vertices_texture(&mut self, mut vs: Vec<Vec<f64>>) {
+
+    fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
         match &mut self.vertices_texture {
             Some(x) => {
-                x.append(&mut vs);
+                x.extend(vs);
             }
             None => {
-                let mut ls: Vec<Vec<f64>> = Vec::new();
-                ls.append(&mut vs);
-                self.vertices_texture = Some(ls);
+                self.vertices_texture = Some(vs);
             }
-        };
+        }
     }
 }
 
@@ -1226,6 +1257,8 @@ impl Appearance {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
+    use std::io::{BufRead, BufReader};
 
     /// Test cases derived from CityJSON specification v2.0.1
     /// See: https://www.cityjson.org/specs/2.0.1/#semantics-of-geometric-primitives
@@ -1373,5 +1406,141 @@ mod tests {
                 ]),]),
             ])
         );
+    }
+
+    #[test]
+    fn test_appearance_parsing() {
+        // Read the test fixture. The file is Rotterdams data.
+        let file =
+            fs::File::open("tests/fixtures/appearance.jsonl").expect("Unable to read test fixture");
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader
+            .lines()
+            .map(|line| line.expect("Failed to read line"))
+            .collect();
+
+        // Skip first line (CityJSON object) and use second line (CityJSONFeature)
+        let feature: CityJSONFeature = serde_json::from_str(&lines[1]).unwrap();
+
+        // Test appearance exists
+        let appearance = feature.appearance.unwrap();
+
+        let materials = appearance.materials.unwrap();
+        let textures = appearance.textures.unwrap();
+        let vertices_tex = appearance.vertices_texture.unwrap();
+
+        // Test textures
+        assert!(textures.len() == 5);
+        assert!(textures[0].texture_type == "JPG");
+        assert!(textures[0].image == "appearances/0320_2_12.jpg");
+
+        // Test vertices-texture
+        assert!(vertices_tex.len() == 30);
+        assert_eq!(vertices_tex[0], [0.2517, 0.1739]);
+
+        // Test materials
+        assert!(materials.len() == 2);
+        assert_eq!(materials[0].name, "roofandground");
+        assert_eq!(materials[0].ambient_intensity, Some(0.2000));
+        assert_eq!(materials[0].diffuse_color, Some([0.9000, 0.1000, 0.7500]));
+        assert_eq!(materials[0].emissive_color, Some([0.9000, 0.1000, 0.7500]));
+        assert_eq!(materials[0].specular_color, Some([0.9, 0.1, 0.75]));
+        assert_eq!(materials[0].shininess, Some(0.2));
+        assert_eq!(materials[0].transparency, Some(0.5));
+        assert_eq!(materials[0].is_smooth, Some(false));
+
+        // Verify optional fields are None
+        assert!(appearance.default_theme_texture.is_none());
+        assert!(appearance.default_theme_material.is_none());
+    }
+
+    #[test]
+    fn test_add_material() {
+        let mut appearance = Appearance::new();
+
+        // Test adding first material
+        let mat1 = MaterialObject {
+            name: "roofandground".to_string(),
+            ambient_intensity: Some(0.2),
+            diffuse_color: Some([0.9, 0.1, 0.75]),
+            emissive_color: Some([0.9, 0.1, 0.75]),
+            specular_color: Some([0.9, 0.1, 0.75]),
+            shininess: Some(0.2),
+            transparency: Some(0.5),
+            is_smooth: Some(false),
+        };
+        let index1 = appearance.add_material(mat1.clone());
+        assert_eq!(index1, 0);
+
+        // Test adding duplicate material (should return same index)
+        let index2 = appearance.add_material(mat1.clone());
+        assert_eq!(index2, 0);
+
+        // Test adding different material
+        let mat2 = MaterialObject {
+            name: "wall".to_string(),
+            ambient_intensity: Some(0.4),
+            diffuse_color: Some([0.1, 0.1, 0.9]),
+            emissive_color: Some([0.1, 0.1, 0.9]),
+            specular_color: Some([0.9, 0.1, 0.75]),
+            shininess: Some(0.0),
+            transparency: Some(0.5),
+            is_smooth: Some(true),
+        };
+        let index3 = appearance.add_material(mat2);
+        assert_eq!(index3, 1);
+    }
+
+    #[test]
+    fn test_add_texture() {
+        let mut appearance = Appearance::new();
+
+        // Test adding first texture
+        let tex1 = TextureObject {
+            texture_type: "JPG".to_string(),
+            image: "appearances/0320_2_12.jpg".to_string(),
+            wrap_mode: None,
+            texture_type_semantic: None,
+            border_color: None,
+        };
+        let index1 = appearance.add_texture(tex1.clone());
+        assert_eq!(index1, 0);
+
+        // Test adding duplicate texture (should return same index)
+        let index2 = appearance.add_texture(tex1);
+        assert_eq!(index2, 0);
+
+        // Test adding different texture
+        let tex2 = TextureObject {
+            texture_type: "JPG".to_string(),
+            image: "appearances/0320_2_13.jpg".to_string(),
+            wrap_mode: None,
+            texture_type_semantic: None,
+            border_color: None,
+        };
+        let index3 = appearance.add_texture(tex2);
+        assert_eq!(index3, 1);
+    }
+
+    #[test]
+    fn test_add_vertices_texture() {
+        let mut appearance = Appearance::new();
+
+        // Test adding first set of vertices
+        let vertices1 = vec![[0.2517, 0.1739], [0.3155, 0.2015]];
+        appearance.add_vertices_texture(vertices1.clone());
+        assert_eq!(appearance.vertices_texture.as_ref().unwrap().len(), 2);
+
+        // Test adding more vertices
+        let vertices2 = vec![[0.2734, 0.3057], [0.2269, 0.2883]];
+        appearance.add_vertices_texture(vertices2);
+        assert_eq!(appearance.vertices_texture.as_ref().unwrap().len(), 4);
+
+        // Verify all vertices are present in correct order
+        let all_vertices = appearance.vertices_texture.unwrap();
+        assert_eq!(all_vertices[0], [0.2517, 0.1739]);
+        assert_eq!(all_vertices[1], [0.3155, 0.2015]);
+        assert_eq!(all_vertices[2], [0.2734, 0.3057]);
+        assert_eq!(all_vertices[3], [0.2269, 0.2883]);
     }
 }
