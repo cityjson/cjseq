@@ -580,6 +580,38 @@ impl JsonIndex for Option<u32> {
     }
 }
 
+impl JsonIndex for usize {
+    fn from_value(v: &Value) -> Option<Self> {
+        if let Some(u) = v.as_u64() {
+            Some(u as usize)
+        } else if let Some(i) = v.as_i64() {
+            Some(i as usize)
+        } else {
+            None
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Number(Number::from(*self as u64))
+    }
+}
+
+impl JsonIndex for Option<usize> {
+    fn from_value(v: &Value) -> Option<Self> {
+        if let Some(u) = v.as_u64() {
+            Some(Some(u as usize))
+        } else if let Some(i) = v.as_i64() {
+            Some(Some(i as usize))
+        } else {
+            None
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Array(self.iter().map(|x| x.to_value()).collect())
+    }
+}
+
 /// Our nested structure, generic over `T`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NestedArray<T> {
@@ -805,86 +837,40 @@ impl Geometry {
                         }
                         continue;
                     }
-                    //-- else it's material.values (which differs per geom type)
-                    match self.thetype {
-                        GeometryType::MultiPoint | GeometryType::MultiLineString => (),
-                        GeometryType::MultiSurface | GeometryType::CompositeSurface => {
-                            if mat.values.is_some() {
-                                if let Some(MaterialValues::Surface(values)) = mat.values.take() {
-                                    let mut new_values = values.clone();
-                                    for (i, x) in values.iter().enumerate() {
-                                        if let Some(old_idx) = x {
-                                            let new_idx = {
-                                                let y2 = m_oldnew.get(old_idx);
-                                                if y2.is_none() {
-                                                    let l = m_oldnew.len();
-                                                    m_oldnew.insert(*old_idx, l);
-                                                    l
-                                                } else {
-                                                    *y2.unwrap()
-                                                }
-                                            };
-                                            new_values[i] = Some(new_idx);
-                                        }
-                                    }
-                                    mat.values = Some(MaterialValues::Surface(new_values));
-                                }
-                            }
-                        }
-                        GeometryType::Solid => {
-                            if mat.values.is_some() {
-                                if let Some(MaterialValues::Solid(values)) = mat.values.take() {
-                                    let mut new_values = values.clone();
-                                    for (i, shell) in values.iter().enumerate() {
-                                        for (j, x) in shell.iter().enumerate() {
-                                            if let Some(old_idx) = x {
-                                                let new_idx = {
-                                                    let y2 = m_oldnew.get(old_idx);
-                                                    if y2.is_none() {
-                                                        let l = m_oldnew.len();
-                                                        m_oldnew.insert(*old_idx, l);
-                                                        l
-                                                    } else {
-                                                        *y2.unwrap()
-                                                    }
-                                                };
-                                                new_values[i][j] = Some(new_idx);
+
+                    //-- else it's material.values
+                    if let Some(values) = &mut mat.values {
+                        // Helper function to update indices in a nested array
+                        fn update_indices(
+                            array: &mut NestedArray<Option<usize>>,
+                            m_oldnew: &mut HashMap<usize, usize>,
+                        ) {
+                            match array {
+                                NestedArray::Indices(indices) => {
+                                    for idx in indices.iter_mut().filter_map(|x| x.as_mut()) {
+                                        let old_idx = *idx;
+                                        let new_idx = {
+                                            let y = m_oldnew.get(&old_idx);
+                                            if y.is_none() {
+                                                let l = m_oldnew.len();
+                                                m_oldnew.insert(old_idx, l);
+                                                l
+                                            } else {
+                                                *y.unwrap()
                                             }
-                                        }
+                                        };
+                                        *idx = new_idx;
                                     }
-                                    mat.values = Some(MaterialValues::Solid(new_values));
+                                }
+                                NestedArray::Nested(nested) => {
+                                    for sub in nested {
+                                        update_indices(sub, m_oldnew);
+                                    }
                                 }
                             }
                         }
-                        GeometryType::MultiSolid | GeometryType::CompositeSolid => {
-                            if mat.values.is_some() {
-                                if let Some(MaterialValues::MultiSolid(values)) = mat.values.take()
-                                {
-                                    let mut new_values = values.clone();
-                                    for (i, solid) in values.iter().enumerate() {
-                                        for (j, shell) in solid.iter().enumerate() {
-                                            for (k, x) in shell.iter().enumerate() {
-                                                if let Some(old_idx) = x {
-                                                    let new_idx = {
-                                                        let y2 = m_oldnew.get(old_idx);
-                                                        if y2.is_none() {
-                                                            let l = m_oldnew.len();
-                                                            m_oldnew.insert(*old_idx, l);
-                                                            l
-                                                        } else {
-                                                            *y2.unwrap()
-                                                        }
-                                                    };
-                                                    new_values[i][j][k] = Some(new_idx);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    mat.values = Some(MaterialValues::MultiSolid(new_values));
-                                }
-                            }
-                        }
-                        GeometryType::GeometryInstance => todo!(),
+
+                        update_indices(values, m_oldnew);
                     }
                 }
                 self.material = Some(x.clone());
@@ -901,84 +887,58 @@ impl Geometry {
         match &mut self.texture {
             Some(x) => {
                 for (_key, tex) in &mut *x {
-                    match self.thetype {
-                        GeometryType::MultiSurface | GeometryType::CompositeSurface => {
-                            if let TextureValues::Surface(values) =
-                                std::mem::replace(&mut tex.values, TextureValues::Surface(vec![]))
-                            {
-                                let mut new_values = values.clone();
-                                for (i, surface) in values.iter().enumerate() {
-                                    for (j, ring) in surface.iter().enumerate() {
-                                        for (k, value) in ring.iter().enumerate() {
-                                            if let Some(old_idx) = value {
-                                                let new_idx = if k == 0 {
-                                                    let y2 = t_oldnew.get(old_idx);
-                                                    if y2.is_none() {
-                                                        let l = t_oldnew.len();
-                                                        t_oldnew.insert(*old_idx, l);
-                                                        l
-                                                    } else {
-                                                        *y2.unwrap()
-                                                    }
-                                                } else {
-                                                    let y2 = t_v_oldnew.get(old_idx);
-                                                    if y2.is_none() {
-                                                        let l = t_v_oldnew.len();
-                                                        t_v_oldnew.insert(*old_idx, l + offset);
-                                                        l
-                                                    } else {
-                                                        *y2.unwrap()
-                                                    }
-                                                };
-                                                new_values[i][j][k] = Some(new_idx);
+                    // Helper function to update indices in a nested array
+                    fn update_texture_indices(
+                        array: &mut NestedArray<Option<usize>>,
+                        t_oldnew: &mut HashMap<usize, usize>,
+                        t_v_oldnew: &mut HashMap<usize, usize>,
+                        offset: usize,
+                        depth: usize,
+                    ) {
+                        match array {
+                            NestedArray::Indices(indices) => {
+                                for (i, idx) in indices.iter_mut().enumerate() {
+                                    if let Some(old_idx) = idx {
+                                        let new_idx = if i == 0 {
+                                            // First index is texture index
+                                            let y = t_oldnew.get(old_idx);
+                                            if y.is_none() {
+                                                let l = t_oldnew.len();
+                                                t_oldnew.insert(*old_idx, l);
+                                                l
+                                            } else {
+                                                *y.unwrap()
                                             }
-                                        }
+                                        } else {
+                                            // Other indices are vertex texture coordinates
+                                            let y = t_v_oldnew.get(old_idx);
+                                            if y.is_none() {
+                                                let l = t_v_oldnew.len();
+                                                t_v_oldnew.insert(*old_idx, l + offset);
+                                                l + offset
+                                            } else {
+                                                *y.unwrap()
+                                            }
+                                        };
+                                        *idx = Some(new_idx);
                                     }
                                 }
-                                tex.values = TextureValues::Surface(new_values);
                             }
-                        }
-                        GeometryType::Solid => {
-                            if let TextureValues::Solid(values) =
-                                std::mem::replace(&mut tex.values, TextureValues::Solid(vec![]))
-                            {
-                                let mut new_values = values.clone();
-                                for (i, shell) in values.iter().enumerate() {
-                                    for (j, surface) in shell.iter().enumerate() {
-                                        for (k, ring) in surface.iter().enumerate() {
-                                            for (l, value) in ring.iter().enumerate() {
-                                                if let Some(old_idx) = value {
-                                                    let new_idx = if l == 0 {
-                                                        let y2 = t_oldnew.get(old_idx);
-                                                        if y2.is_none() {
-                                                            let l2 = t_oldnew.len();
-                                                            t_oldnew.insert(*old_idx, l2);
-                                                            l2
-                                                        } else {
-                                                            *y2.unwrap()
-                                                        }
-                                                    } else {
-                                                        let y2 = t_v_oldnew.get(old_idx);
-                                                        if y2.is_none() {
-                                                            let l2 = t_v_oldnew.len();
-                                                            t_v_oldnew
-                                                                .insert(*old_idx, l2 + offset);
-                                                            l2
-                                                        } else {
-                                                            *y2.unwrap()
-                                                        }
-                                                    };
-                                                    new_values[i][j][k][l] = Some(new_idx);
-                                                }
-                                            }
-                                        }
-                                    }
+                            NestedArray::Nested(nested) => {
+                                for sub in nested {
+                                    update_texture_indices(
+                                        sub,
+                                        t_oldnew,
+                                        t_v_oldnew,
+                                        offset,
+                                        depth + 1,
+                                    );
                                 }
-                                tex.values = TextureValues::Solid(new_values);
                             }
                         }
-                        _ => todo!(),
                     }
+
+                    update_texture_indices(&mut tex.values, t_oldnew, t_v_oldnew, offset, 0);
                 }
             }
             None => (),
@@ -1258,17 +1218,7 @@ impl Validate for TextureObject {
     }
 }
 
-pub type MaterialSurfaceValues = Vec<Option<usize>>;
-pub type MaterialSolidValues = Vec<Vec<Option<usize>>>;
-pub type MaterialMultiSolidValues = Vec<Vec<Vec<Option<usize>>>>;
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(untagged)]
-pub enum MaterialValues {
-    Surface(MaterialSurfaceValues),
-    Solid(MaterialSolidValues),
-    MultiSolid(MaterialMultiSolidValues),
-}
+pub type MaterialValues = NestedArray<Option<usize>>;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MaterialReference {
@@ -1278,62 +1228,11 @@ pub struct MaterialReference {
     pub value: Option<usize>,
 }
 
-impl MaterialReference {
-    pub fn new_surface(values: Option<MaterialSurfaceValues>) -> Self {
-        Self {
-            values: values.map(MaterialValues::Surface),
-            value: None,
-        }
-    }
-
-    pub fn new_solid(values: Option<MaterialSolidValues>) -> Self {
-        Self {
-            values: values.map(MaterialValues::Solid),
-            value: None,
-        }
-    }
-
-    pub fn new_multi_solid(values: Option<MaterialMultiSolidValues>) -> Self {
-        Self {
-            values: values.map(MaterialValues::MultiSolid),
-            value: None,
-        }
-    }
-
-    pub fn new_single(value: usize) -> Self {
-        Self {
-            values: None,
-            value: Some(value),
-        }
-    }
-}
-
-pub type TextureSurfaceValues = Vec<Vec<Vec<Option<usize>>>>; // [surfaces][rings][texture_idx + uv_indices]
-pub type TextureSolidValues = Vec<Vec<Vec<Vec<Option<usize>>>>>; // [shells][surfaces][rings][texture_idx + uv_indices]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(untagged)]
-pub enum TextureValues {
-    Surface(TextureSurfaceValues),
-    Solid(TextureSolidValues),
-}
+pub type TextureValues = NestedArray<Option<usize>>;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TextureReference {
     pub values: TextureValues,
-}
-
-impl TextureReference {
-    pub fn new_surface(values: TextureSurfaceValues) -> Self {
-        Self {
-            values: TextureValues::Surface(values),
-        }
-    }
-
-    pub fn new_solid(values: TextureSolidValues) -> Self {
-        Self {
-            values: TextureValues::Solid(values),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -1437,7 +1336,7 @@ mod tests {
     #[test]
     fn test_multipoint_boundaries() {
         let json_value = json!([2, 44, 0, 7]);
-        let boundaries = parse_nested_array(&json_value);
+        let boundaries = parse_nested_array::<usize>(&json_value);
         assert_eq!(boundaries, NestedArray::Indices(vec![2, 44, 0, 7]));
     }
 
@@ -1446,7 +1345,7 @@ mod tests {
     #[test]
     fn test_multilinestring_boundaries() {
         let json_value = json!([[2, 3, 5], [77, 55, 212]]);
-        let boundaries = parse_nested_array(&json_value);
+        let boundaries = parse_nested_array::<usize>(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1462,7 +1361,7 @@ mod tests {
     #[test]
     fn test_multisurface_boundaries() {
         let json_value = json!([[[0, 3, 2, 1]], [[4, 5, 6, 7]], [[0, 1, 5, 4]]]);
-        let boundaries = parse_nested_array(&json_value);
+        let boundaries = parse_nested_array::<usize>(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1495,7 +1394,7 @@ mod tests {
                 [[111, 246, 5]]
             ]
         ]);
-        let boundaries = parse_nested_array(&json_value);
+        let boundaries = parse_nested_array::<usize>(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1549,7 +1448,7 @@ mod tests {
                 [[111, 122, 226]]
             ]]
         ]);
-        let boundaries = parse_nested_array(&json_value);
+        let boundaries = parse_nested_array::<usize>(&json_value);
         assert_eq!(
             boundaries,
             NestedArray::Nested(vec![
@@ -1572,7 +1471,7 @@ mod tests {
                     NestedArray::Nested(vec![NestedArray::Indices(vec![74, 75, 76])]),
                     NestedArray::Nested(vec![NestedArray::Indices(vec![880, 881, 885])]),
                     NestedArray::Nested(vec![NestedArray::Indices(vec![111, 122, 226])]),
-                ]),]),
+                ]),])
             ])
         );
     }
