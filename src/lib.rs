@@ -598,7 +598,9 @@ impl JsonIndex for usize {
 
 impl JsonIndex for Option<usize> {
     fn from_value(v: &Value) -> Option<Self> {
-        if let Some(u) = v.as_u64() {
+        if v.is_null() {
+            Some(None)
+        } else if let Some(u) = v.as_u64() {
             Some(Some(u as usize))
         } else if let Some(i) = v.as_i64() {
             Some(Some(i as usize))
