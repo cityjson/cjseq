@@ -30,7 +30,6 @@ enum Commands {
     /// CityJSON ==> CityJSONSeq
     Cat {
         /// CityJSON input file
-        #[arg(short, long)]
         file: Option<PathBuf>,
         /// Sorting for the cat output
         #[arg(short, long, value_enum)]
@@ -39,7 +38,6 @@ enum Commands {
     /// CityJSONSeq ==> CityJSON
     Collect {
         /// CityJSONSeq input file
-        #[arg(short, long)]
         file: Option<PathBuf>,
     },
     /// Filter a CityJSONSeq

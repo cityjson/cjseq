@@ -27,7 +27,7 @@
 
 ## Usage
 
-`cjseq` can take input from either stdin or a file, and it always outputs the results to stdout. 
+`cjseq` takes input from either a file or the standard input (stdin, if no file path is given as argument), and it always outputs the results to the standard output (stdout). 
 The output can be a CityJSON object or a CityJSONSeq stream.
 
 ### Convert CityJSON to CityJSONSeq
@@ -35,13 +35,13 @@ The output can be a CityJSON object or a CityJSONSeq stream.
 Convert a CityJSON file to a CityJSONSeq stream:
 
 ```sh
-cjseq cat -f myfile.city.json > myfile.city.jsonl
+cjseq cat myfile.city.json > myfile.city.jsonl
 ```
 
-Alternatively use stdin:
+Alternatively, to use stdin:
 
 ```sh
-cat myfile.city.json | cjseq cat` will output the stream to stdin.
+cat myfile.city.json | cjseq cat
 ```
 
 ### Convert CityJSONSeq to CityJSON
