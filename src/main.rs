@@ -141,6 +141,12 @@ fn main() {
             radius,
             random,
         } => {
+            if bbox.is_none() && cotype.is_none() && radius.is_none() && random.is_none() {
+                if let Err(e) = filter_random(*exclude, 1) {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
             if bbox.is_some() {
                 if let Err(e) = filter_bbox(*exclude, &bbox.clone().unwrap()) {
                     eprintln!("{e}");
