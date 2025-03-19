@@ -1,8 +1,10 @@
 use cjseq::CityJSON;
 use cjseq::CityJSONFeature;
+use cjseq::Transform;
 
 extern crate clap;
 use clap::{Parser, Subcommand, ValueEnum};
+use serde_json::{json, Error, Value};
 
 use rand::Rng;
 use std::fmt;
@@ -271,13 +273,22 @@ fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<(), MyError> {
 fn collect_from_stdin() -> Result<(), MyError> {
     let stdin = std::io::stdin();
     let mut cjj = CityJSON::new();
-    for (i, line) in stdin.lock().lines().enumerate() {
-        let l = line.unwrap();
-        if i == 0 {
-            cjj = CityJSON::from_str(&l)?;
-        } else {
-            let mut cjf = CityJSONFeature::from_str(&l)?;
-            cjj.add_cjfeature(&mut cjf);
+    let mut cjj_init: bool = false;
+    for line in stdin.lock().lines() {
+        if let Ok(json_line) = line {
+            let j: Value = serde_json::from_str(&json_line)?;
+            if j.get("type").unwrap() == "CityJSON" {
+                if cjj_init == false {
+                    cjj = CityJSON::from_str(&json_line)?;
+                    cjj_init = true;
+                } else {
+                    let t: Transform = serde_json::from_value(j.get("transform").unwrap().clone())?;
+                    cjj.add_transform_correction(t);
+                }
+            } else {
+                let mut cjf = CityJSONFeature::from_str(&json_line)?;
+                cjj.add_cjfeature(&mut cjf);
+            }
         }
     }
     cjj.remove_duplicate_vertices();

@@ -34,6 +34,8 @@ pub struct CityJSON {
     pub other: serde_json::Value,
     #[serde(skip)]
     sorted_ids: Vec<String>,
+    #[serde(skip)]
+    transform_correction: Option<Transform>,
 }
 impl CityJSON {
     pub fn new() -> Self {
@@ -52,6 +54,7 @@ impl CityJSON {
             extensions: None,
             other: json!(null),
             sorted_ids: vec![],
+            transform_correction: None,
         }
     }
     pub fn from_str(s: &str) -> Result<Self, Error> {
@@ -80,6 +83,7 @@ impl CityJSON {
             other: self.other.clone(),
             extensions: self.extensions.clone(),
             sorted_ids: vec![],
+            transform_correction: None,
         };
         //-- if geometry-templates have material/textures then these need to be
         //-- added to 1st line (metadata)
@@ -224,6 +228,9 @@ impl CityJSON {
         }
         Some(cjf)
     }
+    pub fn add_transform_correction(&mut self, t: Transform) {
+        self.transform_correction = Some(t);
+    }
     pub fn add_cjfeature(&mut self, cjf: &mut CityJSONFeature) {
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
@@ -359,8 +366,28 @@ impl CityJSON {
     fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id.clone(), co);
     }
-    fn add_vertices(&mut self, v: &mut Vec<Vec<i64>>) {
-        self.vertices.append(v);
+    fn add_vertices(&mut self, vs: &mut Vec<Vec<i64>>) {
+        if self.transform_correction.is_none() {
+            self.vertices.append(vs);
+        } else {
+            //-- the transfrom correction needs to be applied
+            let c = self.transform_correction.as_ref().unwrap();
+            for v in vs {
+                let cx: i64 = (((v[0] as f64 * c.scale[0]) + c.translate[0]
+                    - self.transform.translate[0])
+                    / self.transform.scale[0])
+                    .round() as i64;
+                let cy: i64 = (((v[1] as f64 * c.scale[1]) + c.translate[1]
+                    - self.transform.translate[1])
+                    / self.transform.scale[1])
+                    .round() as i64;
+                let cz: i64 = (((v[2] as f64 * c.scale[2]) + c.translate[2]
+                    - self.transform.translate[2])
+                    / self.transform.scale[2])
+                    .round() as i64;
+                self.vertices.push(vec![cx, cy, cz]);
+            }
+        }
     }
     fn add_vertices_texture(&mut self, vs: Vec<Vec<f64>>) {
         match &mut self.appearance {
