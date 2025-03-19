@@ -4,7 +4,7 @@ use cjseq::Transform;
 
 extern crate clap;
 use clap::{Parser, Subcommand, ValueEnum};
-use serde_json::{json, Error, Value};
+use serde_json::Value;
 
 use rand::Rng;
 use std::fmt;

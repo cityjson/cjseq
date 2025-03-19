@@ -8,8 +8,8 @@ const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 pub enum SortingStrategy {
     Random,
     Alphabetical,
-    Morton, //-- TODO implement Morton sorting
-    Hilbert,
+    Morton,  //-- TODO implement Morton sorting
+    Hilbert, //-- TODO implement Hilbert sorting
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
