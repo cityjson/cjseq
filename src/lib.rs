@@ -228,6 +228,8 @@ impl CityJSON {
         }
         Some(cjf)
     }
+    /// Used when many CityJSONSeq are used, the "transform" can
+    /// be modified (the new value is a "correction").
     pub fn add_transform_correction(&mut self, t: Transform) {
         self.transform_correction = Some(t);
     }

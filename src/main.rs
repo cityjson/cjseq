@@ -39,7 +39,7 @@ enum Commands {
     },
     /// CityJSONSeq ==> CityJSON
     Collect {
-        /// CityJSONSeq input file(s) (glob works)
+        /// CityJSONSeq input file(s) (globbing works)
         files: Option<Vec<String>>,
     },
     /// Filter a CityJSONSeq
