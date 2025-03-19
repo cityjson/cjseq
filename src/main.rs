@@ -181,18 +181,20 @@ fn main() {
 fn filter_random(exclude: bool, rand_factor: u32) -> Result<(), MyError> {
     let stdin = std::io::stdin();
     let mut rng = rand::thread_rng();
-    for (i, line) in stdin.lock().lines().enumerate() {
+    for line in stdin.lock().lines() {
         let mut w: bool = false;
-        let l = line.unwrap();
-        if i == 0 {
-            io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-        } else {
-            let r: u32 = rng.gen_range(1..=rand_factor);
-            if r == 1 {
-                w = true;
-            }
-            if (w == true && !exclude) || (w == false && exclude) {
+        if let Ok(l) = line {
+            let j: Value = serde_json::from_str(&l)?;
+            if j.get("type").unwrap() == "CityJSON" {
                 io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+            } else {
+                let r: u32 = rng.gen_range(1..=rand_factor);
+                if r == 1 {
+                    w = true;
+                }
+                if (w == true && !exclude) || (w == false && exclude) {
+                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                }
             }
         }
     }
@@ -201,43 +203,48 @@ fn filter_random(exclude: bool, rand_factor: u32) -> Result<(), MyError> {
 
 fn filter_cotype(exclude: bool, cotype: String) -> Result<(), MyError> {
     let stdin = std::io::stdin();
-    for (i, line) in stdin.lock().lines().enumerate() {
+    for line in stdin.lock().lines() {
         let mut w: bool = false;
-        let l = line.unwrap();
-        if i == 0 {
-            io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-        } else {
-            let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-            if cjf.city_objects[&cjf.id].get_type() == cotype {
-                w = true;
-            }
-            if (w == true && !exclude) || (w == false && exclude) {
+        if let Ok(l) = line {
+            let j: Value = serde_json::from_str(&l)?;
+            if j.get("type").unwrap() == "CityJSON" {
                 io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+            } else {
+                let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
+                if cjf.city_objects[&cjf.id].get_type() == cotype {
+                    w = true;
+                }
+                if (w == true && !exclude) || (w == false && exclude) {
+                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                }
             }
         }
     }
+
     Ok(())
 }
 
 fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<(), MyError> {
     let stdin = std::io::stdin();
     let mut cj: CityJSON = CityJSON::new();
-    for (i, line) in stdin.lock().lines().enumerate() {
+    for line in stdin.lock().lines() {
         let mut w: bool = false;
-        let l = line.unwrap();
-        if i == 0 {
-            io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-            cj = CityJSON::from_str(&l)?;
-        } else {
-            let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-            let ci = cjf.centroid();
-            let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
-            let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
-            if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
-                w = true;
-            }
-            if (w == true && !exclude) || (w == false && exclude) {
+        if let Ok(l) = line {
+            let j: Value = serde_json::from_str(&l)?;
+            if j.get("type").unwrap() == "CityJSON" {
                 io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                cj = CityJSON::from_str(&l)?;
+            } else {
+                let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
+                let ci = cjf.centroid();
+                let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
+                let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
+                if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
+                    w = true;
+                }
+                if (w == true && !exclude) || (w == false && exclude) {
+                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                }
             }
         }
     }
@@ -247,23 +254,25 @@ fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<(), MyError> {
 fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<(), MyError> {
     let stdin = std::io::stdin();
     let mut cj: CityJSON = CityJSON::new();
-    for (i, line) in stdin.lock().lines().enumerate() {
+    for line in stdin.lock().lines() {
         let mut w: bool = false;
-        let l = line.unwrap();
-        if i == 0 {
-            io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
-            cj = CityJSON::from_str(&l)?;
-        } else {
-            let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-            let ci = cjf.centroid();
-            let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
-            let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
-            let d2 = (cx - x).powf(2.0) + (cy - y).powf(2.0);
-            if d2 <= (r * r) {
-                w = true;
-            }
-            if (w == true && !exclude) || (w == false && exclude) {
+        if let Ok(l) = line {
+            let j: Value = serde_json::from_str(&l)?;
+            if j.get("type").unwrap() == "CityJSON" {
                 io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                cj = CityJSON::from_str(&l)?;
+            } else {
+                let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
+                let ci = cjf.centroid();
+                let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
+                let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
+                let d2 = (cx - x).powf(2.0) + (cy - y).powf(2.0);
+                if d2 <= (r * r) {
+                    w = true;
+                }
+                if (w == true && !exclude) || (w == false && exclude) {
+                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                }
             }
         }
     }
