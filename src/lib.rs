@@ -309,6 +309,32 @@ impl CityJSON {
         //-- replace the vertices, innit?
         self.vertices = newvertices;
     }
+    pub fn update_geographicalextent(&mut self) {
+        if let Some(m) = &mut self.metadata {
+            if let Some(ref mut ge) = m.geographical_extent {
+                let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];
+                let mut maxs: Vec<i64> = vec![i64::MIN, i64::MIN, i64::MIN];
+                for v in &self.vertices {
+                    for i in 0..3 {
+                        if v[i] < mins[i] {
+                            mins[i] = v[i];
+                        }
+                        if v[i] > maxs[i] {
+                            maxs[i] = v[i];
+                        }
+                    }
+                }
+                *ge = [
+                    mins[0] as f64 * self.transform.scale[0] + self.transform.translate[0],
+                    mins[1] as f64 * self.transform.scale[1] + self.transform.translate[1],
+                    mins[2] as f64 * self.transform.scale[2] + self.transform.translate[2],
+                    maxs[0] as f64 * self.transform.scale[0] + self.transform.translate[0],
+                    maxs[1] as f64 * self.transform.scale[1] + self.transform.translate[1],
+                    maxs[2] as f64 * self.transform.scale[2] + self.transform.translate[2],
+                ];
+            }
+        }
+    }
     pub fn update_transform(&mut self) {
         let mut newvertices: Vec<Vec<i64>> = Vec::new();
         let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];

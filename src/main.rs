@@ -293,6 +293,7 @@ fn collect_from_stdin() -> Result<(), MyError> {
     }
     cjj.remove_duplicate_vertices();
     cjj.update_transform();
+    cjj.update_geographicalextent();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }
@@ -327,6 +328,7 @@ fn collect_from_files(files: &Vec<String>) -> Result<(), MyError> {
     }
     cjj.remove_duplicate_vertices();
     cjj.update_transform();
+    cjj.update_geographicalextent();
     io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }
