@@ -39,8 +39,8 @@ enum Commands {
     },
     /// CityJSONSeq ==> CityJSON
     Collect {
-        /// CityJSONSeq input file
-        file: Option<PathBuf>,
+        /// CityJSONSeq input file(s) (glob works)
+        files: Option<Vec<String>>,
     },
     /// Filter a CityJSONSeq
     Filter {
@@ -121,9 +121,9 @@ fn main() {
             }
         }
         //-- collect
-        Commands::Collect { file } => match file {
+        Commands::Collect { files } => match files {
             Some(x) => {
-                if let Err(e) = collect_from_file(x) {
+                if let Err(e) = collect_from_files(x) {
                     eprintln!("{e}");
                     std::process::exit(1);
                 }
@@ -297,21 +297,32 @@ fn collect_from_stdin() -> Result<(), MyError> {
     Ok(())
 }
 
-fn collect_from_file(file: &PathBuf) -> Result<(), MyError> {
-    let f = File::open(file.canonicalize()?)?;
-    let br = BufReader::new(f);
-    let mut cjj: CityJSON = CityJSON::new();
-    for (i, line) in br.lines().enumerate() {
-        match &line {
-            Ok(l) => {
-                if i == 0 {
-                    cjj = CityJSON::from_str(&l)?;
-                } else {
-                    let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-                    cjj.add_cjfeature(&mut cjf);
+fn collect_from_files(files: &Vec<String>) -> Result<(), MyError> {
+    let mut cjj = CityJSON::new();
+    let mut cjj_init: bool = false;
+    for file in files {
+        let path = PathBuf::from(file);
+        let f = File::open(path.canonicalize()?)?;
+        let br = BufReader::new(f);
+        for (i, line) in br.lines().enumerate() {
+            match &line {
+                Ok(l) => {
+                    if i == 0 {
+                        if cjj_init == false {
+                            cjj = CityJSON::from_str(&l)?;
+                            cjj_init = true;
+                        } else {
+                            let cjj2 = CityJSON::from_str(&l)?;
+                            let t: Transform = cjj2.transform;
+                            cjj.add_transform_correction(t);
+                        }
+                    } else {
+                        let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
+                        cjj.add_cjfeature(&mut cjf);
+                    }
                 }
+                Err(error) => eprintln!("Error reading line: {}", error),
             }
-            Err(error) => eprintln!("Error reading line: {}", error),
         }
     }
     cjj.remove_duplicate_vertices();
