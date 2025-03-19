@@ -52,6 +52,16 @@ Convert a CityJSONSeq stream to a CityJSON file:
 cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json
 ```
 
+```sh
+cjseq collect ./data/3dbag_b2.city.jsonl > 3dbag_b2.city.json
+```
+
+[Globbing](https://en.wikipedia.org/wiki/Glob_(programming)) works for the `collect` command:
+
+```sh
+cat ./data/*.city.jsonl | cjseq collect > hugefile.city.json
+```
+
 ### Filter CityJSONSeq
 
 `cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset.city.jsonl`
