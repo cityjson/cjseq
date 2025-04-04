@@ -1099,7 +1099,7 @@ pub struct Metadata {
 pub struct GeometryTemplates {
     pub templates: Vec<Geometry>,
     #[serde(rename = "vertices-templates")]
-    pub vertices_templates: Value,
+    pub vertices_templates: Vec<[f64; 3]>,
 }
 
 pub trait Validate {
