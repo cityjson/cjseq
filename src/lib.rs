@@ -1,6 +1,10 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{json, Error, Number, Value};
+use serde_json::{json, Number, Value};
 use std::collections::HashMap;
+
+// Re-export the error module
+pub mod error;
+pub use error::*;
 
 const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 
@@ -54,7 +58,7 @@ impl CityJSON {
             sorted_ids: vec![],
         }
     }
-    pub fn from_str(s: &str) -> Result<Self, Error> {
+    pub fn from_str(s: &str) -> Result<Self> {
         let mut raw_value: serde_json::Value = serde_json::from_str(s)?;
 
         // Handle extensions - support both old Value-typed extensions and new HashMap<String, Extension>
@@ -435,7 +439,7 @@ impl CityJSONFeature {
             extensions: None,
         }
     }
-    pub fn from_str(s: &str) -> Result<Self, Error> {
+    pub fn from_str(s: &str) -> Result<Self> {
         let cjf: CityJSONFeature = serde_json::from_str(&s)?;
         Ok(cjf)
     }
@@ -668,7 +672,7 @@ impl<T> Serialize for NestedArray<T>
 where
     T: JsonIndex,
 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -680,7 +684,7 @@ impl<'de, T> Deserialize<'de> for NestedArray<T>
 where
     T: JsonIndex,
 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -1068,9 +1072,11 @@ impl ReferenceSystem {
     // OGC Name Type Specification:
     // http://www.opengis.net/def/crs/{authority}/{version}/{code}
     // where {authority} designates the authority responsible for the definition of this CRS (usually "EPSG" or "OGC"), and where {version} designates the specific version of the CRS ("0" (zero) is used if there is no version).
-    pub fn from_url(url: &str) -> Result<Self, &'static str> {
+    pub fn from_url(url: &str) -> Result<Self> {
         if !url.contains("//www.opengis.net/def/crs") {
-            return Err("Invalid reference system URL");
+            return Err(CjseqError::Generic(
+                "Invalid reference system URL".to_string(),
+            ));
         }
 
         let i = url.find("crs").unwrap();
@@ -1078,7 +1084,9 @@ impl ReferenceSystem {
 
         let parts: Vec<&str> = s.split("/").collect();
         if parts.len() != 3 {
-            return Err("Invalid reference system URL");
+            return Err(CjseqError::Generic(
+                "Invalid reference system URL".to_string(),
+            ));
         }
 
         Ok(ReferenceSystem {
@@ -1091,7 +1099,7 @@ impl ReferenceSystem {
 }
 
 impl Serialize for ReferenceSystem {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -1100,12 +1108,12 @@ impl Serialize for ReferenceSystem {
 }
 
 impl<'de> Deserialize<'de> for ReferenceSystem {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let url = String::deserialize(deserializer)?;
-        ReferenceSystem::from_url(&url).map_err(serde::de::Error::custom)
+        ReferenceSystem::from_url(&url).map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }
 
@@ -1137,7 +1145,7 @@ pub struct GeometryTemplates {
 }
 
 pub trait Validate {
-    fn validate(&self) -> Result<(), String>;
+    fn validate(&self) -> Result<()>;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -1160,10 +1168,13 @@ pub struct MaterialObject {
 }
 
 impl Validate for MaterialObject {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<()> {
         if let Some(intensity) = self.ambient_intensity {
             if !(0.0..=1.0).contains(&intensity) {
-                return Err("ambient_intensity must be between 0.0 and 1.0".to_string());
+                return Err(CjseqError::InvalidValue {
+                    field: "ambient_intensity".to_string(),
+                    reason: "must be between 0.0 and 1.0".to_string(),
+                });
             }
         }
 
@@ -1175,7 +1186,10 @@ impl Validate for MaterialObject {
             if let Some(c) = color {
                 for &v in c.iter() {
                     if !(0.0..=1.0).contains(&v) {
-                        return Err(format!("{} values must be between 0.0 and 1.0", name));
+                        return Err(CjseqError::InvalidValue {
+                            field: name.to_string(),
+                            reason: "must be between 0.0 and 1.0".to_string(),
+                        });
                     }
                 }
             }
@@ -1183,13 +1197,19 @@ impl Validate for MaterialObject {
 
         if let Some(shininess) = self.shininess {
             if !(0.0..=1.0).contains(&shininess) {
-                return Err("shininess must be between 0.0 and 1.0".to_string());
+                return Err(CjseqError::InvalidValue {
+                    field: "shininess".to_string(),
+                    reason: "must be between 0.0 and 1.0".to_string(),
+                });
             }
         }
 
         if let Some(transparency) = self.transparency {
             if !(0.0..=1.0).contains(&transparency) {
-                return Err("transparency must be between 0.0 and 1.0".to_string());
+                return Err(CjseqError::InvalidValue {
+                    field: "transparency".to_string(),
+                    reason: "must be between 0.0 and 1.0".to_string(),
+                });
             }
         }
 
@@ -1242,11 +1262,14 @@ pub struct TextureObject {
 }
 
 impl Validate for TextureObject {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<()> {
         if let Some(colors) = &self.border_color {
             for (i, &c) in colors.iter().enumerate() {
                 if !(0.0..=1.0).contains(&c) {
-                    return Err(format!("border_color[{}] must be between 0.0 and 1.0", i));
+                    return Err(CjseqError::InvalidValue {
+                        field: "border_color".to_string(),
+                        reason: format!("border_color[{}] must be between 0.0 and 1.0", i),
+                    });
                 }
             }
         }
@@ -1370,7 +1393,7 @@ impl Extension {
     }
 
     // Fetch the full extension file from the URL
-    pub fn fetch_extension_file(&self, name: String) -> Result<ExtensionFile, String> {
+    pub fn fetch_extension_file(&self, name: String) -> Result<ExtensionFile> {
         ExtensionFile::fetch_from_url(name, self.url.clone(), self.version.clone())
     }
 }
@@ -1408,7 +1431,7 @@ impl ExtensionFile {
     }
 
     /// Creates a new ExtensionFile by fetching JSON schema from the URL
-    pub fn fetch_from_url(name: String, url: String, version: String) -> Result<Self, String> {
+    pub fn fetch_from_url(name: String, url: String, version: String) -> Result<Self> {
         #[cfg(feature = "reqwest")]
         {
             use std::time::Duration;
@@ -1419,23 +1442,19 @@ impl ExtensionFile {
                 .build()
             {
                 Ok(client) => client,
-                Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+                Err(e) => return Err(CjseqError::Generic(e.to_string())),
             };
 
             // Fetch the extension schema
             let response = match client.get(&url).send() {
                 Ok(response) => response,
-                Err(e) => return Err(format!("Failed to fetch extension schema: {}", e)),
+                Err(e) => return Err(CjseqError::HttpError(e)),
             };
-
-            if !response.status().is_success() {
-                return Err(format!("HTTP error: {}", response.status()));
-            }
 
             // Parse the JSON response
             let schema: serde_json::Value = match response.json() {
                 Ok(json) => json,
-                Err(e) => return Err(format!("Failed to parse extension schema: {}", e)),
+                Err(e) => return Err(CjseqError::HttpError(e)),
             };
 
             // Extract the extension data
@@ -1473,29 +1492,44 @@ impl ExtensionFile {
 
         #[cfg(not(feature = "reqwest"))]
         {
-            Err("HTTP requests are not enabled. Enable the 'reqwest' feature to use this functionality.".to_string())
+            Err(CjseqError::Generic("HTTP requests are not enabled. Enable the 'reqwest' feature to use this functionality.".to_string()))
         }
     }
 
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<()> {
         if self.thetype != "CityJSONExtension" {
-            return Err("Extension type must be 'CityJSONExtension'".to_string());
+            return Err(CjseqError::InvalidValue {
+                field: "thetype".to_string(),
+                reason: "must be 'CityJSONExtension'".to_string(),
+            });
         }
 
         if self.name.is_empty() {
-            return Err("Extension name cannot be empty".to_string());
+            return Err(CjseqError::InvalidValue {
+                field: "name".to_string(),
+                reason: "cannot be empty".to_string(),
+            });
         }
 
         if self.url.is_empty() {
-            return Err("Extension URL cannot be empty".to_string());
+            return Err(CjseqError::InvalidValue {
+                field: "url".to_string(),
+                reason: "cannot be empty".to_string(),
+            });
         }
 
         if self.version.is_empty() {
-            return Err("Extension version cannot be empty".to_string());
+            return Err(CjseqError::InvalidValue {
+                field: "version".to_string(),
+                reason: "cannot be empty".to_string(),
+            });
         }
 
         if self.versionCityJSON.is_empty() {
-            return Err("CityJSON version cannot be empty".to_string());
+            return Err(CjseqError::InvalidValue {
+                field: "versionCityJSON".to_string(),
+                reason: "cannot be empty".to_string(),
+            });
         }
 
         // Validate that the "extra" fields are objects (can be empty but must be objects)
@@ -1506,7 +1540,10 @@ impl ExtensionFile {
             ("extraSemanticSurfaces", &self.extraSemanticSurfaces),
         ] {
             if !field.is_object() {
-                return Err(format!("{} must be a JSON object", field_name));
+                return Err(CjseqError::InvalidValue {
+                    field: field_name.to_string(),
+                    reason: "must be a JSON object".to_string(),
+                });
             }
         }
 
