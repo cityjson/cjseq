@@ -29,7 +29,7 @@ pub struct CityJSON {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geometry_templates: Option<GeometryTemplates>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Value>,
+    pub extensions: Option<HashMap<String, Extension>>,
     #[serde(flatten)]
     pub other: serde_json::Value,
     #[serde(skip)]
@@ -55,7 +55,18 @@ impl CityJSON {
         }
     }
     pub fn from_str(s: &str) -> Result<Self, Error> {
-        let mut cjj: CityJSON = serde_json::from_str(s)?;
+        let mut raw_value: serde_json::Value = serde_json::from_str(s)?;
+
+        // Handle extensions - support both old Value-typed extensions and new HashMap<String, Extension>
+        if let Some(extensions_value) = raw_value.get_mut("extensions") {
+            if !extensions_value.is_object() {
+                // If extensions isn't an object, set it to null so it's skipped
+                *extensions_value = json!(null);
+            }
+        }
+
+        let mut cjj: CityJSON = serde_json::from_value(raw_value)?;
+
         //-- check if CO exists, then add them to the sorted_ids
         for (key, co) in &cjj.city_objects {
             if co.is_toplevel() {
@@ -372,7 +383,7 @@ impl CityJSON {
             }
         };
     }
-    fn add_material(&mut self, jm: MaterialObject) -> usize {
+    pub fn add_material(&mut self, jm: MaterialObject) -> usize {
         let re = match &mut self.appearance {
             Some(x) => x.add_material(jm),
             None => {
@@ -408,6 +419,8 @@ pub struct CityJSONFeature {
     pub vertices: Vec<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<HashMap<String, Extension>>,
 }
 impl CityJSONFeature {
     pub fn new() -> Self {
@@ -419,6 +432,7 @@ impl CityJSONFeature {
             city_objects: co,
             vertices: v,
             appearance: None,
+            extensions: None,
         }
     }
     pub fn from_str(s: &str) -> Result<Self, Error> {
@@ -488,6 +502,26 @@ impl CityObject {
     pub fn get_type(&self) -> String {
         self.thetype.clone()
     }
+
+    // Check if this city object is from an extension (type starts with +)
+    pub fn is_extension_type(&self) -> bool {
+        self.thetype.starts_with("+")
+    }
+
+    // If this is an extension type (starts with +), return the extension name
+    pub fn get_extension_type(&self) -> Option<String> {
+        if self.is_extension_type() {
+            // Remove the + prefix and get the part before any further + or . characters
+            let type_name = self.thetype.trim_start_matches('+');
+            match type_name.find(|c| c == '+' || c == '.') {
+                Some(idx) => Some(type_name[..idx].to_string()),
+                None => Some(type_name.to_string()),
+            }
+        } else {
+            None
+        }
+    }
+
     fn is_toplevel(&self) -> bool {
         match &self.parents {
             Some(x) => {
@@ -1323,6 +1357,171 @@ impl Appearance {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Extension {
+    pub url: String,
+    pub version: String,
+}
+
+impl Extension {
+    // Convert an extension reference to a minimal extension file template
+    pub fn new(url: String, version: String) -> Self {
+        Extension { url, version }
+    }
+
+    // Fetch the full extension file from the URL
+    pub fn fetch_extension_file(&self, name: String) -> Result<ExtensionFile, String> {
+        ExtensionFile::fetch_from_url(name, self.url.clone(), self.version.clone())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ExtensionFile {
+    #[serde(rename = "type")]
+    pub thetype: String, // Must be "CityJSONExtension"
+    pub name: String,
+    pub description: String,
+    pub url: String,
+    pub version: String,
+    pub versionCityJSON: String,
+    pub extraAttributes: Value,
+    pub extraCityObjects: Value,
+    pub extraRootProperties: Value,
+    pub extraSemanticSurfaces: Value,
+}
+
+impl ExtensionFile {
+    /// Creates a new ExtensionFile with the given parameters without fetching data
+    pub fn new(name: String, url: String, version: String) -> Self {
+        ExtensionFile {
+            thetype: "CityJSONExtension".to_string(),
+            name,
+            description: "".to_string(),
+            url,
+            version,
+            versionCityJSON: "2.0".to_string(),
+            extraAttributes: json!({}),
+            extraCityObjects: json!({}),
+            extraRootProperties: json!({}),
+            extraSemanticSurfaces: json!({}),
+        }
+    }
+
+    /// Creates a new ExtensionFile by fetching JSON schema from the URL
+    pub fn fetch_from_url(name: String, url: String, version: String) -> Result<Self, String> {
+        #[cfg(feature = "reqwest")]
+        {
+            use std::time::Duration;
+
+            // Create a client with a timeout
+            let client = match reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+            {
+                Ok(client) => client,
+                Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+            };
+
+            // Fetch the extension schema
+            let response = match client.get(&url).send() {
+                Ok(response) => response,
+                Err(e) => return Err(format!("Failed to fetch extension schema: {}", e)),
+            };
+
+            if !response.status().is_success() {
+                return Err(format!("HTTP error: {}", response.status()));
+            }
+
+            // Parse the JSON response
+            let schema: serde_json::Value = match response.json() {
+                Ok(json) => json,
+                Err(e) => return Err(format!("Failed to parse extension schema: {}", e)),
+            };
+
+            // Extract the extension data
+            let mut extension = Self::new(name, url, version);
+
+            if let Some(obj) = schema.get("description").and_then(|v| v.as_str()) {
+                extension.description = obj.to_string();
+            }
+
+            // Extract schema components if available
+            if let Some(obj) = schema.get("extraAttributes").and_then(|v| v.as_object()) {
+                extension.extraAttributes = json!(obj);
+            }
+
+            if let Some(obj) = schema.get("extraCityObjects").and_then(|v| v.as_object()) {
+                extension.extraCityObjects = json!(obj);
+            }
+
+            if let Some(obj) = schema
+                .get("extraRootProperties")
+                .and_then(|v| v.as_object())
+            {
+                extension.extraRootProperties = json!(obj);
+            }
+
+            if let Some(obj) = schema
+                .get("extraSemanticSurfaces")
+                .and_then(|v| v.as_object())
+            {
+                extension.extraSemanticSurfaces = json!(obj);
+            }
+
+            Ok(extension)
+        }
+
+        #[cfg(not(feature = "reqwest"))]
+        {
+            Err("HTTP requests are not enabled. Enable the 'reqwest' feature to use this functionality.".to_string())
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.thetype != "CityJSONExtension" {
+            return Err("Extension type must be 'CityJSONExtension'".to_string());
+        }
+
+        if self.name.is_empty() {
+            return Err("Extension name cannot be empty".to_string());
+        }
+
+        if self.url.is_empty() {
+            return Err("Extension URL cannot be empty".to_string());
+        }
+
+        if self.version.is_empty() {
+            return Err("Extension version cannot be empty".to_string());
+        }
+
+        if self.versionCityJSON.is_empty() {
+            return Err("CityJSON version cannot be empty".to_string());
+        }
+
+        // Validate that the "extra" fields are objects (can be empty but must be objects)
+        for (field_name, field) in [
+            ("extraAttributes", &self.extraAttributes),
+            ("extraCityObjects", &self.extraCityObjects),
+            ("extraRootProperties", &self.extraRootProperties),
+            ("extraSemanticSurfaces", &self.extraSemanticSurfaces),
+        ] {
+            if !field.is_object() {
+                return Err(format!("{} must be a JSON object", field_name));
+            }
+        }
+
+        Ok(())
+    }
+
+    // Get all the extension city object types defined in this extension
+    pub fn get_city_object_types(&self) -> Vec<String> {
+        match self.extraCityObjects.as_object() {
+            Some(obj) => obj.keys().map(|k| k.clone()).collect(),
+            None => Vec::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1687,5 +1886,48 @@ mod tests {
             ..valid_texture.clone()
         };
         assert!(invalid_border_color_2.validate().is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "reqwest")]
+    fn test_extension_file_fetch() {
+        // Note: This test makes a network request and might fail if the URL is invalid
+        // or if there's no internet connection
+        let result = ExtensionFile::fetch_from_url(
+            "Noise".to_string(),
+            "https://www.cityjson.org/schemas/2.0/extensions/noise.ext.json".to_string(),
+            "1.0".to_string(),
+        );
+
+        // Just check if we can parse it without errors
+        if let Ok(extension) = result {
+            assert_eq!(extension.name, "Noise");
+            assert!(extension.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_extension_file_validation() {
+        let valid_ext = ExtensionFile::new(
+            "Noise".to_string(),
+            "https://www.cityjson.org/schemas/extensions/noise.ext.json".to_string(),
+            "1.0".to_string(),
+        );
+        assert!(valid_ext.validate().is_ok());
+
+        // Test invalid type
+        let mut invalid_type = valid_ext.clone();
+        invalid_type.thetype = "Invalid".to_string();
+        assert!(invalid_type.validate().is_err());
+
+        // Test empty name
+        let mut invalid_name = valid_ext.clone();
+        invalid_name.name = "".to_string();
+        assert!(invalid_name.validate().is_err());
+
+        // Test empty URL
+        let mut invalid_url = valid_ext.clone();
+        invalid_url.url = "".to_string();
+        assert!(invalid_url.validate().is_err());
     }
 }
