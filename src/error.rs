@@ -29,7 +29,7 @@ pub enum CjseqError {
     InvalidValue { field: String, reason: String },
 
     /// Error related to HTTP requests
-    #[cfg(feature = "http")]
+    #[cfg(feature = "extension")]
     #[error("HTTP error: {0}")]
     HttpError(#[from] reqwest::Error),
 

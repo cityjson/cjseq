@@ -1398,6 +1398,7 @@ impl Extension {
     }
 }
 
+#[cfg(feature = "extension")]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ExtensionFile {
     #[serde(rename = "type")]
@@ -1437,7 +1438,7 @@ impl ExtensionFile {
 
     /// Creates a new ExtensionFile by fetching JSON schema from the URL
     pub fn fetch_from_url(name: String, url: String, version: String) -> Result<Self> {
-        #[cfg(feature = "reqwest")]
+        #[cfg(feature = "extension")]
         {
             use std::time::Duration;
 
@@ -1495,9 +1496,9 @@ impl ExtensionFile {
             Ok(extension)
         }
 
-        #[cfg(not(feature = "reqwest"))]
+        #[cfg(not(feature = "extension"))]
         {
-            Err(CjseqError::Generic("HTTP requests are not enabled. Enable the 'reqwest' feature to use this functionality.".to_string()))
+            Err(CjseqError::Generic("HTTP requests are not enabled. Enable the 'extension' feature to use this functionality.".to_string()))
         }
     }
 
@@ -1931,7 +1932,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "reqwest")]
+    #[cfg(feature = "extension")]
     fn test_extension_file_fetch() {
         // Note: This test makes a network request and might fail if the URL is invalid
         // or if there's no internet connection

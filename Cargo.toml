@@ -23,4 +23,4 @@ thiserror = "1.0"
 
 [features]
 default = []
-http = ["reqwest"]
+extension = ["reqwest"]
