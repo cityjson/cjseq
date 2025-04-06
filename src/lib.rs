@@ -1406,11 +1406,16 @@ pub struct ExtensionFile {
     pub description: String,
     pub url: String,
     pub version: String,
-    pub versionCityJSON: String,
-    pub extraAttributes: Value,
-    pub extraCityObjects: Value,
-    pub extraRootProperties: Value,
-    pub extraSemanticSurfaces: Value,
+    #[serde(rename = "versionCityJSON")]
+    pub version_city_json: String,
+    #[serde(rename = "extraAttributes")]
+    pub extra_attributes: Value,
+    #[serde(rename = "extraCityObjects")]
+    pub extra_city_objects: Value,
+    #[serde(rename = "extraRootProperties")]
+    pub extra_root_properties: Value,
+    #[serde(rename = "extraSemanticSurfaces")]
+    pub extra_semantic_surfaces: Value,
 }
 
 impl ExtensionFile {
@@ -1422,11 +1427,11 @@ impl ExtensionFile {
             description: "".to_string(),
             url,
             version,
-            versionCityJSON: "2.0".to_string(),
-            extraAttributes: json!({}),
-            extraCityObjects: json!({}),
-            extraRootProperties: json!({}),
-            extraSemanticSurfaces: json!({}),
+            version_city_json: "2.0".to_string(),
+            extra_attributes: json!({}),
+            extra_city_objects: json!({}),
+            extra_root_properties: json!({}),
+            extra_semantic_surfaces: json!({}),
         }
     }
 
@@ -1466,25 +1471,25 @@ impl ExtensionFile {
 
             // Extract schema components if available
             if let Some(obj) = schema.get("extraAttributes").and_then(|v| v.as_object()) {
-                extension.extraAttributes = json!(obj);
+                extension.extra_attributes = json!(obj);
             }
 
             if let Some(obj) = schema.get("extraCityObjects").and_then(|v| v.as_object()) {
-                extension.extraCityObjects = json!(obj);
+                extension.extra_city_objects = json!(obj);
             }
 
             if let Some(obj) = schema
                 .get("extraRootProperties")
                 .and_then(|v| v.as_object())
             {
-                extension.extraRootProperties = json!(obj);
+                extension.extra_root_properties = json!(obj);
             }
 
             if let Some(obj) = schema
                 .get("extraSemanticSurfaces")
                 .and_then(|v| v.as_object())
             {
-                extension.extraSemanticSurfaces = json!(obj);
+                extension.extra_semantic_surfaces = json!(obj);
             }
 
             Ok(extension)
@@ -1525,7 +1530,7 @@ impl ExtensionFile {
             });
         }
 
-        if self.versionCityJSON.is_empty() {
+        if self.version_city_json.is_empty() {
             return Err(CjseqError::InvalidValue {
                 field: "versionCityJSON".to_string(),
                 reason: "cannot be empty".to_string(),
@@ -1534,10 +1539,10 @@ impl ExtensionFile {
 
         // Validate that the "extra" fields are objects (can be empty but must be objects)
         for (field_name, field) in [
-            ("extraAttributes", &self.extraAttributes),
-            ("extraCityObjects", &self.extraCityObjects),
-            ("extraRootProperties", &self.extraRootProperties),
-            ("extraSemanticSurfaces", &self.extraSemanticSurfaces),
+            ("extraAttributes", &self.extra_attributes),
+            ("extraCityObjects", &self.extra_city_objects),
+            ("extraRootProperties", &self.extra_root_properties),
+            ("extraSemanticSurfaces", &self.extra_semantic_surfaces),
         ] {
             if !field.is_object() {
                 return Err(CjseqError::InvalidValue {
@@ -1552,7 +1557,7 @@ impl ExtensionFile {
 
     // Get all the extension city object types defined in this extension
     pub fn get_city_object_types(&self) -> Vec<String> {
-        match self.extraCityObjects.as_object() {
+        match self.extra_city_objects.as_object() {
             Some(obj) => obj.keys().map(|k| k.clone()).collect(),
             None => Vec::new(),
         }
