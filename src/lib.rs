@@ -424,6 +424,7 @@ pub struct CityJSONFeature {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg(feature = "extension")]
     pub extensions: Option<HashMap<String, Extension>>,
 }
 impl CityJSONFeature {
@@ -1381,11 +1382,13 @@ impl Appearance {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg(feature = "extension")]
 pub struct Extension {
     pub url: String,
     pub version: String,
 }
 
+#[cfg(feature = "extension")]
 impl Extension {
     // Convert an extension reference to a minimal extension file template
     pub fn new(url: String, version: String) -> Self {
@@ -1950,6 +1953,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "extension")]
     fn test_extension_file_validation() {
         let valid_ext = ExtensionFile::new(
             "Noise".to_string(),
