@@ -28,10 +28,15 @@ pub enum CjseqError {
     #[error("Invalid value for {field}: {reason}")]
     InvalidValue { field: String, reason: String },
 
-    /// Error related to HTTP requests
-    #[cfg(feature = "extension")]
+    /// Error related to HTTP requests (native builds)
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("HTTP error: {0}")]
     HttpError(#[from] reqwest::Error),
+
+    /// Error related to HTTP requests (WASM builds)
+    #[cfg(target_arch = "wasm32")]
+    #[error("HTTP error: {0}")]
+    GlooHttpError(#[from] gloo_net::Error),
 
     /// Generic error with custom message
     #[error("{0}")]

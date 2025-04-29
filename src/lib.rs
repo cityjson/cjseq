@@ -1,3 +1,55 @@
+/*!
+# CityJSONSeq
+
+Create, process, modify, and convert CityJSONSeq files.
+
+## Cross-platform Support
+
+This crate supports both native platforms and WebAssembly (WASM):
+
+- **Native platforms**: Uses `reqwest` for HTTP requests.
+- **WASM targets**: Uses `gloo-net` for HTTP requests.
+
+When compiling for WASM, note that some functionality works differently:
+
+- The synchronous `fetch_from_url` method returns a placeholder in WASM environments.
+- Use the `fetch_from_url_async` method when working with WASM targets.
+
+## Example
+
+```rust,no_run
+use cjseq::{CityJSON, CityJSONFeature, Extension, ExtensionFile};
+use std::collections::HashMap;
+
+// To process a CityJSON file:
+let json_str = std::fs::read_to_string("path/to/file.json").unwrap();
+let city_json = CityJSON::from_str(&json_str).unwrap();
+
+// To fetch extension data (native platforms):
+#[cfg(not(target_arch = "wasm32"))]
+{
+    // Make sure to create a long-lived reference to the extension
+    let extensions = &city_json.extensions.unwrap();
+    let extension = extensions.get("my_extension").unwrap();
+    let extension_file = extension.fetch_extension_file("MyExt".to_string()).unwrap();
+}
+
+// To fetch extension data (WASM):
+#[cfg(target_arch = "wasm32")]
+async {
+    if let Some(extensions) = &city_json.extensions {
+        if let Some(extension) = extensions.get("my_extension") {
+            let extension_file = ExtensionFile::fetch_from_url_async(
+                "MyExt".to_string(),
+                extension.url.clone(),
+                extension.version.clone()
+            ).await.unwrap();
+        }
+    }
+}
+```
+*/
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Number, Value};
 use std::collections::HashMap;
@@ -424,7 +476,6 @@ pub struct CityJSONFeature {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg(feature = "extension")]
     pub extensions: Option<HashMap<String, Extension>>,
 }
 impl CityJSONFeature {
@@ -1382,13 +1433,11 @@ impl Appearance {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[cfg(feature = "extension")]
 pub struct Extension {
     pub url: String,
     pub version: String,
 }
 
-#[cfg(feature = "extension")]
 impl Extension {
     // Convert an extension reference to a minimal extension file template
     pub fn new(url: String, version: String) -> Self {
@@ -1401,7 +1450,6 @@ impl Extension {
     }
 }
 
-#[cfg(feature = "extension")]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ExtensionFile {
     #[serde(rename = "type")]
@@ -1441,8 +1489,9 @@ impl ExtensionFile {
 
     /// Creates a new ExtensionFile by fetching JSON schema from the URL
     pub fn fetch_from_url(name: String, url: String, version: String) -> Result<Self> {
-        #[cfg(feature = "extension")]
+        #[cfg(not(target_arch = "wasm32"))]
         {
+            // Native implementation using reqwest
             use std::time::Duration;
 
             // Create a client with a timeout
@@ -1466,42 +1515,78 @@ impl ExtensionFile {
                 Err(e) => return Err(CjseqError::HttpError(e)),
             };
 
-            // Extract the extension data
+            // Create and populate the extension file
             let mut extension = Self::new(name, url, version);
-
-            if let Some(obj) = schema.get("description").and_then(|v| v.as_str()) {
-                extension.description = obj.to_string();
-            }
-
-            // Extract schema components if available
-            if let Some(obj) = schema.get("extraAttributes").and_then(|v| v.as_object()) {
-                extension.extra_attributes = json!(obj);
-            }
-
-            if let Some(obj) = schema.get("extraCityObjects").and_then(|v| v.as_object()) {
-                extension.extra_city_objects = json!(obj);
-            }
-
-            if let Some(obj) = schema
-                .get("extraRootProperties")
-                .and_then(|v| v.as_object())
-            {
-                extension.extra_root_properties = json!(obj);
-            }
-
-            if let Some(obj) = schema
-                .get("extraSemanticSurfaces")
-                .and_then(|v| v.as_object())
-            {
-                extension.extra_semantic_surfaces = json!(obj);
-            }
-
+            Self::populate_extension_from_json(&mut extension, schema);
             Ok(extension)
         }
 
-        #[cfg(not(feature = "extension"))]
+        #[cfg(target_arch = "wasm32")]
         {
-            Err(CjseqError::Generic("HTTP requests are not enabled. Enable the 'extension' feature to use this functionality.".to_string()))
+            // WASM implementation using gloo-net
+            use wasm_bindgen_futures::JsFuture;
+
+            // This is a blocking function that needs async in WASM
+            // Return a placeholder and warn the user
+            eprintln!("Warning: fetch_from_url is not fully implemented for WASM targets. Use the async version instead.");
+
+            // Create a placeholder extension file
+            let extension = Self::new(name, url, version);
+            Ok(extension)
+        }
+    }
+
+    // For WASM environments: async version of fetch_from_url
+    #[cfg(target_arch = "wasm32")]
+    pub async fn fetch_from_url_async(name: String, url: String, version: String) -> Result<Self> {
+        use gloo_net::http::Request;
+
+        // Fetch the extension schema
+        let response = match Request::get(&url).send().await {
+            Ok(response) => response,
+            Err(e) => return Err(CjseqError::GlooHttpError(e)),
+        };
+
+        // Parse the JSON response
+        let schema: serde_json::Value = match response.json().await {
+            Ok(json) => json,
+            Err(e) => return Err(CjseqError::GlooHttpError(e)),
+        };
+
+        // Create and populate the extension file
+        let mut extension = Self::new(name, url, version);
+        Self::populate_extension_from_json(&mut extension, schema);
+        Ok(extension)
+    }
+
+    // Helper function to populate extension data from JSON response
+    // Used by both native and WASM implementations
+    fn populate_extension_from_json(extension: &mut Self, schema: serde_json::Value) {
+        if let Some(obj) = schema.get("description").and_then(|v| v.as_str()) {
+            extension.description = obj.to_string();
+        }
+
+        // Extract schema components if available
+        if let Some(obj) = schema.get("extraAttributes").and_then(|v| v.as_object()) {
+            extension.extra_attributes = json!(obj);
+        }
+
+        if let Some(obj) = schema.get("extraCityObjects").and_then(|v| v.as_object()) {
+            extension.extra_city_objects = json!(obj);
+        }
+
+        if let Some(obj) = schema
+            .get("extraRootProperties")
+            .and_then(|v| v.as_object())
+        {
+            extension.extra_root_properties = json!(obj);
+        }
+
+        if let Some(obj) = schema
+            .get("extraSemanticSurfaces")
+            .and_then(|v| v.as_object())
+        {
+            extension.extra_semantic_surfaces = json!(obj);
         }
     }
 
@@ -1935,7 +2020,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "extension")]
+    #[cfg(not(target_arch = "wasm32"))]
     fn test_extension_file_fetch() {
         // Note: This test makes a network request and might fail if the URL is invalid
         // or if there's no internet connection
@@ -1953,7 +2038,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "extension")]
     fn test_extension_file_validation() {
         let valid_ext = ExtensionFile::new(
             "Noise".to_string(),

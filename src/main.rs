@@ -6,7 +6,6 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use cjseq::error::{CjseqError, Result};
 use rand::Rng;
-use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
