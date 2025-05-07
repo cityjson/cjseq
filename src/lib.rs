@@ -843,8 +843,8 @@ pub struct SemanticsSurface {
     pub parent: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<u32>>,
-    #[serde(flatten)]
-    pub other: serde_json::Value,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub other: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -1524,7 +1524,6 @@ impl ExtensionFile {
         #[cfg(target_arch = "wasm32")]
         {
             // WASM implementation using gloo-net
-            use wasm_bindgen_futures::JsFuture;
 
             // This is a blocking function that needs async in WASM
             // Return a placeholder and warn the user
