@@ -54,6 +54,15 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Number, Value};
 use std::collections::HashMap;
 
+// Define a platform-specific floating point type
+// Use f32 for WebAssembly targets for better performance and smaller memory footprint
+// Use f64 for native platforms for better precision
+#[cfg(target_arch = "wasm32")]
+pub type Float = f32;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub type Float = f64;
+
 // Re-export the error module
 pub mod error;
 pub use error::*;
@@ -189,7 +198,7 @@ impl CityJSON {
                     }
                     if a.vertices_texture.is_some() {
                         let atv = a.vertices_texture.as_ref().unwrap();
-                        let mut t_new_vertices: Vec<[f64; 2]> = Vec::new();
+                        let mut t_new_vertices: Vec<[Float; 2]> = Vec::new();
                         t_new_vertices.resize(t_v_oldnew.len(), [0.0, 0.0]);
                         for (old, new) in &t_v_oldnew {
                             t_new_vertices[*new] = atv[*old].clone();
@@ -283,7 +292,7 @@ impl CityJSON {
             }
             if a.vertices_texture.is_some() {
                 let atv = a.vertices_texture.as_ref().unwrap();
-                let mut t_new_vertices: Vec<[f64; 2]> = Vec::new();
+                let mut t_new_vertices: Vec<[Float; 2]> = Vec::new();
                 t_new_vertices.resize(t_v_oldnew.len(), [0.0, 0.0]);
                 for (old, new) in &t_v_oldnew {
                     t_new_vertices[*new] = atv[*old].clone();
@@ -391,9 +400,9 @@ impl CityJSON {
         //-- replace the vertices, innit?
         self.vertices = newvertices;
         //-- update the transform/translate
-        let ttx = (mins[0] as f64 * self.transform.scale[0]) + self.transform.translate[0];
-        let tty = (mins[1] as f64 * self.transform.scale[1]) + self.transform.translate[1];
-        let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
+        let ttx = (mins[0] as Float * self.transform.scale[0]) + self.transform.translate[0];
+        let tty = (mins[1] as Float * self.transform.scale[1]) + self.transform.translate[1];
+        let ttz = (mins[2] as Float * self.transform.scale[2]) + self.transform.translate[2];
         self.transform.translate = vec![ttx, tty, ttz];
     }
     pub fn number_of_city_objects(&self) -> usize {
@@ -432,7 +441,7 @@ impl CityJSON {
     fn add_vertices(&mut self, v: &mut Vec<Vec<i64>>) {
         self.vertices.append(v);
     }
-    fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
+    fn add_vertices_texture(&mut self, vs: Vec<[Float; 2]>) {
         match &mut self.appearance {
             Some(x) => x.add_vertices_texture(vs),
             None => {
@@ -501,15 +510,15 @@ impl CityJSONFeature {
     pub fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id, co);
     }
-    pub fn centroid(&self) -> Vec<f64> {
-        let mut totals: Vec<f64> = vec![0., 0., 0.];
+    pub fn centroid(&self) -> Vec<Float> {
+        let mut totals: Vec<Float> = vec![0., 0., 0.];
         for v in &self.vertices {
             for i in 0..3 {
-                totals[i] += v[i] as f64;
+                totals[i] += v[i] as Float;
             }
         }
         for i in 0..3 {
-            totals[i] /= self.vertices.len() as f64;
+            totals[i] /= self.vertices.len() as Float;
         }
         return totals;
     }
@@ -873,7 +882,7 @@ pub struct Geometry {
     pub template: Option<usize>,
     #[serde(rename = "transformationMatrix")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transformation_matrix: Option<[f64; 16]>, // 4x4 matrix stored row-by-row
+    pub transformation_matrix: Option<[Float; 16]>, // 4x4 matrix stored row-by-row
 }
 impl Geometry {
     fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
@@ -1043,8 +1052,8 @@ impl Geometry {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Transform {
-    pub scale: Vec<f64>,
-    pub translate: Vec<f64>,
+    pub scale: Vec<Float>,
+    pub translate: Vec<Float>,
 }
 impl Transform {
     fn new() -> Self {
@@ -1055,7 +1064,7 @@ impl Transform {
     }
 }
 
-pub type GeographicalExtent = [f64; 6];
+pub type GeographicalExtent = [Float; 6];
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Address {
@@ -1196,7 +1205,7 @@ pub struct Metadata {
 pub struct GeometryTemplates {
     pub templates: Vec<Geometry>,
     #[serde(rename = "vertices-templates")]
-    pub vertices_templates: Vec<[f64; 3]>,
+    pub vertices_templates: Vec<[Float; 3]>,
 }
 
 pub trait Validate {
@@ -1207,17 +1216,17 @@ pub trait Validate {
 pub struct MaterialObject {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none", rename = "ambientIntensity")]
-    pub ambient_intensity: Option<f64>,
+    pub ambient_intensity: Option<Float>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "diffuseColor")]
-    pub diffuse_color: Option<[f64; 3]>,
+    pub diffuse_color: Option<[Float; 3]>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "emissiveColor")]
-    pub emissive_color: Option<[f64; 3]>,
+    pub emissive_color: Option<[Float; 3]>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "specularColor")]
-    pub specular_color: Option<[f64; 3]>,
+    pub specular_color: Option<[Float; 3]>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "shininess")]
-    pub shininess: Option<f64>,
+    pub shininess: Option<Float>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "transparency")]
-    pub transparency: Option<f64>,
+    pub transparency: Option<Float>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "isSmooth")]
     pub is_smooth: Option<bool>,
 }
@@ -1313,7 +1322,7 @@ pub struct TextureObject {
     #[serde(skip_serializing_if = "Option::is_none", rename = "textureType")]
     pub texture_type: Option<TextType>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "borderColor")]
-    pub border_color: Option<[f64; 4]>,
+    pub border_color: Option<[Float; 4]>,
 }
 
 impl Validate for TextureObject {
@@ -1357,7 +1366,7 @@ pub struct Appearance {
     pub textures: Option<Vec<TextureObject>>,
     #[serde(rename = "vertices-texture")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vertices_texture: Option<Vec<[f64; 2]>>, // Array of [u,v] coordinates
+    pub vertices_texture: Option<Vec<[Float; 2]>>, // Array of [u,v] coordinates
     #[serde(rename = "default-theme-texture")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_theme_texture: Option<String>,
@@ -1423,7 +1432,7 @@ impl Appearance {
         }
     }
 
-    fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
+    fn add_vertices_texture(&mut self, vs: Vec<[Float; 2]>) {
         match &mut self.vertices_texture {
             Some(x) => {
                 x.extend(vs);
