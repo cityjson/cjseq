@@ -9,6 +9,8 @@ readme = "README.md"
 homepage = "https://github.com/cityjson/cjseq"
 repository = "https://github.com/cityjson/cjseq"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
