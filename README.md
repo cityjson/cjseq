@@ -30,6 +30,36 @@
 `cjseq` can take input from either stdin or a file, and it always outputs the results to stdout. 
 The output can be a CityJSON object or a CityJSONSeq stream.
 
+### OBJ Conversion
+
+The library also provides functionality to convert CityJSON or CityJSONSeq files to OBJ format, which can be used for 3D visualization in many software packages.
+
+Here's an example of how to use the OBJ conversion in your Rust code:
+
+```rust
+use cjseq::{CityJSON, conv::obj};
+use std::fs::File;
+use std::io::Read;
+
+fn main() -> std::io::Result<()> {
+    // Read a CityJSON file
+    let mut file = File::open("your_file.city.json")?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    
+    // Parse into CityJSON
+    let city_json = CityJSON::from_str(&contents).unwrap();
+    
+    // Convert to OBJ and save to file
+    obj::to_obj_file(&city_json, "output.obj")?;
+    
+    // For CityJSONSeq files, use:
+    // obj::jsonseq_file_to_obj("input.city.jsonl", "output.obj")?;
+    
+    Ok(())
+}
+```
+
 ### Convert CityJSON to CityJSONSeq
 
 Convert a CityJSON file to a CityJSONSeq stream:

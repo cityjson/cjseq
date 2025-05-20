@@ -58,6 +58,9 @@ use std::collections::HashMap;
 pub mod error;
 pub use error::*;
 
+// Export the conversion module
+pub mod conv;
+
 const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 
 #[derive(Clone)]
