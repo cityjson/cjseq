@@ -1,4 +1,4 @@
-use crate::{CityJSON, CityJSONFeature, Float, Geometry};
+use crate::{CityJSON, CityJSONFeature, Geometry};
 use std::fs::File;
 use std::io::{Result as IoResult, Write};
 use std::path::Path;
@@ -55,9 +55,9 @@ pub fn to_obj<W: Write>(city_json: &CityJSON, writer: &mut W) -> IoResult<()> {
     let translate = &city_json.transform.translate;
 
     for vertex in &city_json.vertices {
-        let x = (vertex[0] as Float * scale[0]) + translate[0];
-        let y = (vertex[1] as Float * scale[1]) + translate[1];
-        let z = (vertex[2] as Float * scale[2]) + translate[2];
+        let x = (vertex[0] as f64 * scale[0]) + translate[0];
+        let y = (vertex[1] as f64 * scale[1]) + translate[1];
+        let z = (vertex[2] as f64 * scale[2]) + translate[2];
 
         writeln!(writer, "v {} {} {}", x, y, z)?;
     }
@@ -129,11 +129,11 @@ pub fn jsonseq_file_to_obj(path: impl AsRef<Path>, output_path: impl AsRef<Path>
 /// A vector of references to the geometries with the highest LOD.
 fn find_highest_lod_geometry(geometries: &[Geometry]) -> Vec<&Geometry> {
     // Extract LOD values and find the maximum
-    let mut max_lod: Option<Float> = None;
+    let mut max_lod: Option<f64> = None;
 
     for geometry in geometries {
         if let Some(lod_str) = &geometry.lod {
-            if let Ok(lod) = lod_str.parse::<Float>() {
+            if let Ok(lod) = lod_str.parse::<f64>() {
                 max_lod = Some(max_lod.map_or(lod, |max| max.max(lod)));
             }
         }
@@ -150,8 +150,8 @@ fn find_highest_lod_geometry(geometries: &[Geometry]) -> Vec<&Geometry> {
         .iter()
         .filter(|g| {
             if let Some(lod_str) = &g.lod {
-                if let Ok(lod) = lod_str.parse::<Float>() {
-                    return (lod - max_lod_value).abs() < Float::EPSILON;
+                if let Ok(lod) = lod_str.parse::<f64>() {
+                    return (lod - max_lod_value).abs() < f64::EPSILON;
                 }
             }
             false
