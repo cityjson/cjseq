@@ -18,7 +18,7 @@ When compiling for WASM, note that some functionality works differently:
 ## Example
 
 ```rust,no_run
-use cjseq::{CityJSON, CityJSONFeature, Extension, ExtensionFile};
+use cjseq2::{CityJSON, CityJSONFeature, Extension, ExtensionFile};
 use std::collections::HashMap;
 
 // To process a CityJSON file:

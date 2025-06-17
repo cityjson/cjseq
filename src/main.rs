@@ -1,10 +1,10 @@
-use cjseq::CityJSON;
-use cjseq::CityJSONFeature;
+use cjseq2::CityJSON;
+use cjseq2::CityJSONFeature;
 
 extern crate clap;
 use clap::{Parser, Subcommand, ValueEnum};
 
-use cjseq::error::{CjseqError, Result};
+use cjseq2::error::{CjseqError, Result};
 use rand::Rng;
 use std::fs::File;
 use std::io::BufRead;
@@ -75,8 +75,8 @@ fn main() {
         //-- cat
         Commands::Cat { file, order } => {
             let o2 = match order.clone().unwrap_or(SortingStrategy::Random) {
-                SortingStrategy::Random => cjseq::SortingStrategy::Random,
-                SortingStrategy::Alphabetical => cjseq::SortingStrategy::Alphabetical,
+                SortingStrategy::Random => cjseq2::SortingStrategy::Random,
+                SortingStrategy::Alphabetical => cjseq2::SortingStrategy::Alphabetical,
             };
             match file {
                 Some(x) => {
@@ -278,7 +278,7 @@ fn collect_from_file(file: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn cat_from_stdin(order: cjseq::SortingStrategy) -> Result<()> {
+fn cat_from_stdin(order: cjseq2::SortingStrategy) -> Result<()> {
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
@@ -292,7 +292,7 @@ fn cat_from_stdin(order: cjseq::SortingStrategy) -> Result<()> {
     Ok(())
 }
 
-fn cat_from_file(file: &PathBuf, order: cjseq::SortingStrategy) -> Result<()> {
+fn cat_from_file(file: &PathBuf, order: cjseq2::SortingStrategy) -> Result<()> {
     let f = File::open(file.canonicalize()?)?;
     let mut br = BufReader::new(f);
     let mut json_content = String::new();
@@ -302,7 +302,7 @@ fn cat_from_file(file: &PathBuf, order: cjseq::SortingStrategy) -> Result<()> {
     Ok(())
 }
 
-fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
+fn cat(cjj: &mut CityJSON, order: cjseq2::SortingStrategy) -> Result<()> {
     if cjj.thetype != "CityJSON" {
         return Err(CjseqError::CityJsonError(
             "Input file not CityJSON.".to_string(),
