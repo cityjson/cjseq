@@ -1,0 +1,25 @@
+{
+  "name": "cjseq",
+  "type": "module",
+  "collaborators": [
+    "Hugo Ledoux <h.ledoux@tudelft.nl>"
+  ],
+  "description": "Create+process+modify+convert CityJSONSeq ",
+  "version": "0.0.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cityjson/cjseq"
+  },
+  "files": [
+    "cjseq_bg.wasm",
+    "cjseq.js",
+    "cjseq.d.ts"
+  ],
+  "main": "cjseq.js",
+  "homepage": "https://github.com/cityjson/cjseq",
+  "types": "cjseq.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
