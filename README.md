@@ -27,7 +27,7 @@
 
 ## Usage
 
-`cjseq` takes input from either a file or the standard input (stdin, if no file path is given as argument), and it always outputs the results to the standard output (stdout). 
+`cjseq` takes input from either a file or the standard input (stdin, if no file path is given as argument), and it always outputs the results to the standard output (stdout).
 The output can be a CityJSON object or a CityJSONSeq stream.
 
 ### Convert CityJSON to CityJSONSeq
@@ -70,3 +70,17 @@ cat ./data/*.city.jsonl | cjseq collect > hugefile.city.json
 
   1. the input CityJSON/Seq must be v1.1 or v2.0 (v1.0 will panic).
   2. the input JSON must be CityJSON schema-valid, use [cjval](https://github.com/cityjson/cjval) to validate.
+
+## WASM bindings
+
+`cjseq` can be used in JavaScript/TypeScript applications via WASM bindings.
+
+```sh
+cargo install wasm-pack
+```
+
+Build the WASM bindings:
+
+```sh
+wasm-pack build --release --target web --out-dir js
+```
