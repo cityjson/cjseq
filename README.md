@@ -32,13 +32,13 @@ The output can be a CityJSON object or a CityJSONSeq stream.
 
 ### Convert CityJSON to CityJSONSeq
 
-Convert a CityJSON file to a CityJSONSeq stream:
+The operator "cat" converts a CityJSON file to a CityJSONSeq stream:
 
 ```sh
 cjseq cat myfile.city.json > myfile.city.jsonl
 ```
 
-Alternatively, to use stdin:
+Alternatively, to use stdin as input:
 
 ```sh
 cat myfile.city.json | cjseq cat
@@ -46,7 +46,7 @@ cat myfile.city.json | cjseq cat
 
 ### Convert CityJSONSeq to CityJSON
 
-Convert a CityJSONSeq stream to a CityJSON file:
+The operator "collect" converts a CityJSONSeq stream to a CityJSON file:
 
 ```sh
 cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json
@@ -56,7 +56,7 @@ cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json
 cjseq collect ./data/3dbag_b2.city.jsonl > 3dbag_b2.city.json
 ```
 
-[Globbing](https://en.wikipedia.org/wiki/Glob_(programming)) works for the `collect` command:
+Notice that [globbing](https://en.wikipedia.org/wiki/Glob_(programming)) works for the `collect` command:
 
 ```sh
 cat ./data/*.city.jsonl | cjseq collect > hugefile.city.json
@@ -64,7 +64,26 @@ cat ./data/*.city.jsonl | cjseq collect > hugefile.city.json
 
 ### Filter CityJSONSeq
 
-`cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset.city.jsonl`
+An input stream of CityJSONSeq can be filtered with the following operators:
+
+```sh
+--bbox <minx> <miny> <maxx> <maxy>
+          Bounding box filter
+--cotype <COTYPE>
+    Keep only the CityObjects of this type
+--exclude
+    Excludes the selection, thus remove the selected city object(s)
+--radius <x> <y> <radius>
+    Circle filter: centre + radius
+--random <X>
+    1/X chances of a given feature being kept
+```
+
+As an example:
+
+```sh
+cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset.city.jsonl
+```
 
 ## Input constraints
 
