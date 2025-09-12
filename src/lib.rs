@@ -1221,3 +1221,25 @@ impl Appearance {
         };
     }
 }
+
+/// Collects a base CityJSON metadata and a vector of CityJSONFeatures
+/// into a complete CityJSON object
+pub fn cjseq_to_cj(mut base_cj: CityJSON, features: Vec<CityJSONFeature>) -> CityJSON {
+    for mut feature in features {
+        base_cj.add_cjfeature(&mut feature);
+    }
+
+    base_cj.remove_duplicate_vertices();
+    base_cj.update_transform();
+    base_cj.update_geographicalextent();
+
+    base_cj
+}
+
+// WASM bindings module
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
+// Re-export WASM functions for convenience
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;

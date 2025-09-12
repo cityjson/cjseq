@@ -27,18 +27,18 @@
 
 ## Usage
 
-`cjseq` takes input from either a file or the standard input (stdin, if no file path is given as argument), and it always outputs the results to the standard output (stdout).
+`cjseq` takes input from either a file or the standard input (stdin, if no file path is given as argument), and it always outputs the results to the standard output (stdout). 
 The output can be a CityJSON object or a CityJSONSeq stream.
 
 ### Convert CityJSON to CityJSONSeq
 
-The operator "cat" converts a CityJSON file to a CityJSONSeq stream:
+Convert a CityJSON file to a CityJSONSeq stream:
 
 ```sh
 cjseq cat myfile.city.json > myfile.city.jsonl
 ```
 
-Alternatively, to use stdin as input:
+Alternatively, to use stdin:
 
 ```sh
 cat myfile.city.json | cjseq cat
@@ -46,7 +46,7 @@ cat myfile.city.json | cjseq cat
 
 ### Convert CityJSONSeq to CityJSON
 
-The operator "collect" converts a CityJSONSeq stream to a CityJSON file:
+Convert a CityJSONSeq stream to a CityJSON file:
 
 ```sh
 cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json
@@ -56,7 +56,7 @@ cat ./data/3dbag_b2.city.jsonl | cjseq collect > 3dbag_b2.city.json
 cjseq collect ./data/3dbag_b2.city.jsonl > 3dbag_b2.city.json
 ```
 
-Notice that [globbing](https://en.wikipedia.org/wiki/Glob_(programming)) works for the `collect` command:
+[Globbing](https://en.wikipedia.org/wiki/Glob_(programming)) works for the `collect` command:
 
 ```sh
 cat ./data/*.city.jsonl | cjseq collect > hugefile.city.json
@@ -64,42 +64,9 @@ cat ./data/*.city.jsonl | cjseq collect > hugefile.city.json
 
 ### Filter CityJSONSeq
 
-An input stream of CityJSONSeq can be filtered with the following operators:
-
-```sh
---bbox <minx> <miny> <maxx> <maxy>
-          Bounding box filter
---cotype <COTYPE>
-    Keep only the CityObjects of this type
---exclude
-    Excludes the selection, thus remove the selected city object(s)
---radius <x> <y> <radius>
-    Circle filter: centre + radius
---random <X>
-    1/X chances of a given feature being kept
-```
-
-As an example:
-
-```sh
-cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset.city.jsonl
-```
+`cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset.city.jsonl`
 
 ## Input constraints
 
   1. the input CityJSON/Seq must be v1.1 or v2.0 (v1.0 will panic).
   2. the input JSON must be CityJSON schema-valid, use [cjval](https://github.com/cityjson/cjval) to validate.
-
-## WASM bindings
-
-`cjseq` can be used in JavaScript/TypeScript applications via WASM bindings.
-
-```sh
-cargo install wasm-pack
-```
-
-Build the WASM bindings:
-
-```sh
-wasm-pack build --release --target web --out-dir js
-```
