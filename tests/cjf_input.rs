@@ -1,4 +1,4 @@
-use crate::cjseq::{CityJSON, CityJSONFeature, Transform};
+use crate::cjseq::{CityJSON, CityJSONFeature};
 use cjseq;
 use std::path::PathBuf;
 
@@ -9,7 +9,6 @@ use std::io::BufReader;
 #[test]
 fn test1() {
     let mut cjj = CityJSON::new();
-    let mut cjj_init: bool = false;
     let path = PathBuf::from("data/3dbag_b2.city.jsonl");
     let f = File::open(path.canonicalize().unwrap()).unwrap();
     let br = BufReader::new(f);
@@ -17,22 +16,18 @@ fn test1() {
         match &line {
             Ok(l) => {
                 if i == 0 {
-                    if cjj_init == false {
-                        cjj = CityJSON::from_str(&l).unwrap();
-                        cjj_init = true;
-                        assert!(cjj.number_of_city_objects() == 0);
-                        assert!(cjj.get_cjfeature(0).is_none());
-                    } else {
-                        let cjj2 = CityJSON::from_str(&l).unwrap();
-                        let t: Transform = cjj2.transform;
-                        cjj.add_transform_correction(t);
-                    }
+                    cjj = CityJSON::from_str(&l).unwrap();
+                    assert!(cjj.number_of_city_objects() == 0);
+                    assert!(cjj.get_cjfeature(0).is_none());
+                    assert_eq!(cjj.vertices.is_empty(), true);
                 } else {
                     let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l).unwrap();
                     cjj.add_cjfeature(&mut cjf);
+                    assert_eq!(cjj.number_of_city_objects(), i);
                 }
             }
             Err(error) => eprintln!("Error reading line: {}", error),
         }
     }
+    assert_eq!(cjj.number_of_city_objects(), 2);
 }
