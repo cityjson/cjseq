@@ -1,11 +1,11 @@
 # Changelog
 
-## [0.4.0] - XXX
+## [0.4.0] - 2025-09-12
 ### Modified
 - cjseq is now a library + has one binary. Some the functionalities that were in the `main.rs` are now in the `lib.rs` and the binary basically just adds functions to filter and calls the functions of `lib.rs`. This was done also to easily create a Python package.
 - it's now possible to control how the features are ordered in a CityJSONSeq output: random (default) or lexicographical (Morton + Hilbert sorting planned for the future)
 - collect sub-command works with globbing (so multiple files can be input)
-- WASM compilation added, and in the `/js` folder 
+- WASM compilation added
 
 ## [0.3.1] - 2024-06-17
 ### Modified
