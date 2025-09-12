@@ -7,7 +7,7 @@ const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 #[derive(Clone)]
 pub enum SortingStrategy {
     Random,
-    Alphabetical,
+    Lexicographical,
     Morton,  //-- TODO implement Morton sorting
     Hilbert, //-- TODO implement Hilbert sorting
 }
@@ -380,7 +380,7 @@ impl CityJSON {
                     }
                 }
             }
-            SortingStrategy::Alphabetical => {
+            SortingStrategy::Lexicographical => {
                 for (key, co) in &self.city_objects {
                     if co.is_toplevel() {
                         self.sorted_ids.push(key.clone());

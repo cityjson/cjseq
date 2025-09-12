@@ -24,7 +24,7 @@ struct Cli {
 #[derive(Clone, ValueEnum)]
 pub enum SortingStrategy {
     Random,
-    Alphabetical,
+    Lexicographical,
 }
 
 #[derive(Subcommand)]
@@ -103,7 +103,7 @@ fn main() {
         Commands::Cat { file, order } => {
             let o2 = match order.clone().unwrap_or(SortingStrategy::Random) {
                 SortingStrategy::Random => cjseq::SortingStrategy::Random,
-                SortingStrategy::Alphabetical => cjseq::SortingStrategy::Alphabetical,
+                SortingStrategy::Lexicographical => cjseq::SortingStrategy::Lexicographical,
             };
             match file {
                 Some(x) => {
