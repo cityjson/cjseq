@@ -38,6 +38,7 @@ pub struct CityJSON {
     transform_correction: Option<Transform>,
 }
 impl CityJSON {
+    /// Create a new CityJSON instance with default values.
     pub fn new() -> Self {
         let co: HashMap<String, CityObject> = HashMap::new();
         let v: Vec<Vec<i64>> = Vec::new();
@@ -57,6 +58,7 @@ impl CityJSON {
             transform_correction: None,
         }
     }
+    /// Create a new CityJSON instance from a string.
     pub fn from_str(s: &str) -> Result<Self, Error> {
         let mut cjj: CityJSON = serde_json::from_str(s)?;
         //-- check if CO exists, then add them to the sorted_ids
@@ -67,8 +69,9 @@ impl CityJSON {
         }
         Ok(cjj)
     }
+
+    /// Get the "first line" (aka metadata or header) of a CityJSONSeq
     pub fn get_metadata(&self) -> Self {
-        //-- first line: the CityJSON "metadata"
         let co: HashMap<String, CityObject> = HashMap::new();
         let v: Vec<Vec<i64>> = Vec::new();
         let mut cj0 = CityJSON {
@@ -137,6 +140,8 @@ impl CityJSON {
         }
         cj0
     }
+    /// Getter for the features in a CityJSON dataset.
+    /// Starts at 0, and return Option::None if the index is out of bounds.
     pub fn get_cjfeature(&self, i: usize) -> Option<CityJSONFeature> {
         let i2 = self.sorted_ids.get(i);
         if i2.is_none() {
@@ -370,6 +375,8 @@ impl CityJSON {
         }
         total
     }
+    /// When getting the CityJSONFeatures, this controls the order in which
+    /// they are returned. By default they are returned in the order they were added.
     pub fn sort_cjfeatures(&mut self, ss: SortingStrategy) {
         self.sorted_ids.clear();
         match ss {
