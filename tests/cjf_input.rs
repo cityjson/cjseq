@@ -1,0 +1,38 @@
+use crate::cjseq::{CityJSON, CityJSONFeature, Transform};
+use cjseq;
+use std::path::PathBuf;
+
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+
+#[test]
+fn test1() {
+    let mut cjj = CityJSON::new();
+    let mut cjj_init: bool = false;
+    let path = PathBuf::from("data/3dbag_b2.city.jsonl");
+    let f = File::open(path.canonicalize().unwrap()).unwrap();
+    let br = BufReader::new(f);
+    for (i, line) in br.lines().enumerate() {
+        match &line {
+            Ok(l) => {
+                if i == 0 {
+                    if cjj_init == false {
+                        cjj = CityJSON::from_str(&l).unwrap();
+                        cjj_init = true;
+                        assert!(cjj.number_of_city_objects() == 0);
+                        assert!(cjj.get_cjfeature(0).is_none());
+                    } else {
+                        let cjj2 = CityJSON::from_str(&l).unwrap();
+                        let t: Transform = cjj2.transform;
+                        cjj.add_transform_correction(t);
+                    }
+                } else {
+                    let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l).unwrap();
+                    cjj.add_cjfeature(&mut cjf);
+                }
+            }
+            Err(error) => eprintln!("Error reading line: {}", error),
+        }
+    }
+}
