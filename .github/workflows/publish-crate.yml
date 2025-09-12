@@ -38,7 +38,6 @@ jobs:
 
       - name: Bump version
         run: |
-          cd src/rust
           cargo workspaces version ${{ github.event.inputs.version_bump }} --no-git-commit --yes
 
       - name: Commit version bump
