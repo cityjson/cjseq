@@ -30,7 +30,7 @@ jobs:
 
       - name: Build WASM
         run: |
-          wasm-pack build --target web --no-pack
+          wasm-pack build --target web
 
       - name: Publish to NPM
         env:
