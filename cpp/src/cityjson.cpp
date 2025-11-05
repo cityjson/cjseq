@@ -3,10 +3,15 @@
 #include <algorithm>
 #include <array>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace cjseq {
 namespace {
+
+using IndexMap = std::unordered_map<std::size_t, std::size_t>;
 
 constexpr std::array<const char *, 9> kCityJsonKnownKeys = {
     "type",     "version",    "transform",          "CityObjects", "vertices",
@@ -15,6 +20,34 @@ constexpr std::array<const char *, 9> kCityJsonKnownKeys = {
 constexpr std::array<const char *, 6> kCityObjectKnownKeys = {
     "type",     "geographicalExtent", "attributes",
     "geometry", "children",           "parents"};
+
+GeometryType geometry_type_from_string(const std::string &value) {
+  if (value == "MultiPoint") {
+    return GeometryType::MultiPoint;
+  }
+  if (value == "MultiLineString") {
+    return GeometryType::MultiLineString;
+  }
+  if (value == "MultiSurface") {
+    return GeometryType::MultiSurface;
+  }
+  if (value == "CompositeSurface") {
+    return GeometryType::CompositeSurface;
+  }
+  if (value == "Solid") {
+    return GeometryType::Solid;
+  }
+  if (value == "MultiSolid") {
+    return GeometryType::MultiSolid;
+  }
+  if (value == "CompositeSolid") {
+    return GeometryType::CompositeSolid;
+  }
+  if (value == "GeometryInstance") {
+    return GeometryType::GeometryInstance;
+  }
+  throw std::runtime_error("Unsupported geometry type: " + value);
+}
 
 bool is_known_key(std::string_view key,
                   const std::array<const char *, 9> &known_keys) {
@@ -28,6 +61,108 @@ bool is_known_object_key(std::string_view key,
                      [&](const char *candidate) { return key == candidate; });
 }
 
+std::size_t ensure_index(IndexMap &map, std::size_t original) {
+  const auto it = map.find(original);
+  if (it != map.end()) {
+    return it->second;
+  }
+  const std::size_t next = map.size();
+  map.emplace(original, next);
+  return next;
+}
+
+void remap_vertex_indices(JsonValue &value, IndexMap &map) {
+  if (value.is_null()) {
+    return;
+  }
+  if (value.is_number_integer()) {
+    const auto original = static_cast<std::size_t>(value.get<std::int64_t>());
+    const auto mapped = ensure_index(map, original);
+    value = static_cast<std::int64_t>(mapped);
+    return;
+  }
+  if (value.is_array()) {
+    for (auto &child : value) {
+      remap_vertex_indices(child, map);
+    }
+  } else if (value.is_object()) {
+    for (auto &item : value.items()) {
+      remap_vertex_indices(item.value(), map);
+    }
+  }
+}
+
+void apply_vertex_offset(JsonValue &value, std::size_t offset) {
+  if (value.is_null()) {
+    return;
+  }
+  if (value.is_number_integer()) {
+    const auto original = static_cast<std::size_t>(value.get<std::int64_t>());
+    value = static_cast<std::int64_t>(original + offset);
+    return;
+  }
+  if (value.is_array()) {
+    for (auto &child : value) {
+      apply_vertex_offset(child, offset);
+    }
+  } else if (value.is_object()) {
+    for (auto &item : value.items()) {
+      apply_vertex_offset(item.value(), offset);
+    }
+  }
+}
+
+void remap_optional_indices(JsonValue &value, IndexMap &map) {
+  if (value.is_null()) {
+    return;
+  }
+  if (value.is_number_integer()) {
+    const auto original = static_cast<std::size_t>(value.get<std::int64_t>());
+    const auto mapped = ensure_index(map, original);
+    value = static_cast<std::int64_t>(mapped);
+    return;
+  }
+  if (value.is_array()) {
+    for (auto &child : value) {
+      remap_optional_indices(child, map);
+    }
+  } else if (value.is_object()) {
+    for (auto &item : value.items()) {
+      remap_optional_indices(item.value(), map);
+    }
+  }
+}
+
+void remap_texture_values(JsonValue &value, IndexMap &tex_map,
+                          IndexMap &vertex_tex_map, std::size_t offset) {
+  if (value.is_null()) {
+    return;
+  }
+  if (value.is_array()) {
+    for (std::size_t i = 0; i < value.size(); ++i) {
+      auto &child = value.at(i);
+      if (child.is_array()) {
+        remap_texture_values(child, tex_map, vertex_tex_map, offset);
+      } else if (child.is_null()) {
+        continue;
+      } else if (child.is_number_integer()) {
+        const auto raw = static_cast<std::size_t>(child.get<std::int64_t>());
+        if (i == 0) {
+          const auto mapped = ensure_index(tex_map, raw);
+          child = static_cast<std::int64_t>(mapped);
+        } else {
+          const auto mapped = ensure_index(vertex_tex_map, raw);
+          child = static_cast<std::int64_t>(mapped + offset);
+        }
+      }
+    }
+  } else if (value.is_object()) {
+    for (auto &item : value.items()) {
+      remap_texture_values(item.value(), tex_map, vertex_tex_map, offset);
+    }
+  }
+}
+
 Transform parse_transform(const JsonValue &value) {
   Transform transform;
   if (value.contains("scale")) {
@@ -37,6 +172,10 @@ Transform parse_transform(const JsonValue &value) {
     transform.translate = value.at("translate").get<std::vector<double>>();
   }
   return transform;
+}
+
+Geometry parse_geometry(const JsonValue &value) {
+  return Geometry::from_json(value);
 }
 
 CityObject parse_city_object(const JsonValue &value) {
@@ -57,7 +196,16 @@ CityObject parse_city_object(const JsonValue &value) {
   }
 
   if (value.contains("geometry")) {
-    object.geometry = value.at("geometry").get<std::vector<JsonValue>>();
+    const auto &geometry_array = value.at("geometry");
+    if (!geometry_array.is_array()) {
+      throw std::runtime_error("CityObject.geometry must be an array");
+    }
+    std::vector<Geometry> geometries;
+    geometries.reserve(geometry_array.size());
+    for (const auto &geometry_value : geometry_array) {
+      geometries.emplace_back(parse_geometry(geometry_value));
+    }
+    object.geometry = std::move(geometries);
   }
 
   if (value.contains("children")) {
@@ -85,7 +233,322 @@ CityObject parse_city_object(const JsonValue &value) {
 
 Transform::Transform() : scale({1.0, 1.0, 1.0}), translate({0.0, 0.0, 0.0}) {}
 
+Material::Material() = default;
+
+Material Material::from_json(const JsonValue &value) {
+  Material material;
+  if (value.contains("value")) {
+    material.value =
+        static_cast<std::size_t>(value.at("value").get<std::int64_t>());
+  }
+  if (value.contains("values")) {
+    material.values = value.at("values");
+  }
+  return material;
+}
+
+Texture::Texture() = default;
+
+Texture Texture::from_json(const JsonValue &value) {
+  Texture texture;
+  if (value.contains("values")) {
+    texture.values = value.at("values");
+  }
+  return texture;
+}
+
+Appearance::Appearance() = default;
+
+Appearance Appearance::from_json(const JsonValue &value) {
+  Appearance appearance;
+  if (value.contains("materials")) {
+    appearance.materials = value.at("materials").get<std::vector<JsonValue>>();
+  }
+  if (value.contains("textures")) {
+    appearance.textures = value.at("textures").get<std::vector<JsonValue>>();
+  }
+  if (value.contains("vertices-texture")) {
+    appearance.vertices_texture =
+        value.at("vertices-texture").get<std::vector<std::vector<double>>>();
+  }
+  if (value.contains("default-theme-texture")) {
+    appearance.default_theme_texture =
+        value.at("default-theme-texture").get<std::string>();
+  }
+  if (value.contains("default-theme-material")) {
+    appearance.default_theme_material =
+        value.at("default-theme-material").get<std::string>();
+  }
+  return appearance;
+}
+
+std::size_t Appearance::add_material(JsonValue material) {
+  if (!materials) {
+    materials = std::vector<JsonValue>{};
+  }
+  auto &list = *materials;
+  const auto it = std::find(list.begin(), list.end(), material);
+  if (it != list.end()) {
+    return static_cast<std::size_t>(std::distance(list.begin(), it));
+  }
+  list.push_back(material);
+  return list.size() - 1;
+}
+
+std::size_t Appearance::add_texture(JsonValue texture) {
+  if (!textures) {
+    textures = std::vector<JsonValue>{};
+  }
+  auto &list = *textures;
+  const auto it = std::find(list.begin(), list.end(), texture);
+  if (it != list.end()) {
+    return static_cast<std::size_t>(std::distance(list.begin(), it));
+  }
+  list.push_back(texture);
+  return list.size() - 1;
+}
+
+void Appearance::add_vertices_texture(
+    std::vector<std::vector<double>> vertices) {
+  if (!vertices_texture) {
+    vertices_texture = std::vector<std::vector<double>>{};
+  }
+  auto &list = *vertices_texture;
+  list.insert(list.end(), vertices.begin(), vertices.end());
+}
+
+Geometry::Geometry() = default;
+
+Geometry Geometry::from_json(const JsonValue &value) {
+  Geometry geometry;
+  geometry.type =
+      geometry_type_from_string(value.at("type").get<std::string>());
+  geometry.boundaries = value.at("boundaries");
+
+  if (value.contains("lod")) {
+    geometry.lod = value.at("lod").get<std::string>();
+  }
+  if (value.contains("semantics")) {
+    geometry.semantics = value.at("semantics");
+  }
+  if (value.contains("material")) {
+    std::unordered_map<std::string, Material> map;
+    for (const auto &[key, material_value] : value.at("material").items()) {
+      map.emplace(key, Material::from_json(material_value));
+    }
+    geometry.material = std::move(map);
+  }
+  if (value.contains("texture")) {
+    std::unordered_map<std::string, Texture> map;
+    for (const auto &[key, texture_value] : value.at("texture").items()) {
+      map.emplace(key, Texture::from_json(texture_value));
+    }
+    geometry.texture = std::move(map);
+  }
+  if (value.contains("template")) {
+    geometry.template_index =
+        static_cast<std::size_t>(value.at("template").get<std::int64_t>());
+  }
+  if (value.contains("transformationMatrix")) {
+    geometry.transformation_matrix = value.at("transformationMatrix");
+  }
+
+  return geometry;
+}
+
+void Geometry::update_geometry_boundaries(IndexMap &vi_oldnew) {
+  JsonValue updated = boundaries;
+  remap_vertex_indices(updated, vi_oldnew);
+  boundaries = std::move(updated);
+}
+
+void Geometry::offset_geometry_boundaries(std::size_t offset) {
+  JsonValue updated = boundaries;
+  apply_vertex_offset(updated, offset);
+  boundaries = std::move(updated);
+}
+
+void Geometry::update_material(IndexMap &m_oldnew) {
+  if (!material) {
+    return;
+  }
+  for (auto &[_, material_value] : *material) {
+    if (material_value.value) {
+      const auto mapped = ensure_index(m_oldnew, *material_value.value);
+      material_value.value = mapped;
+    }
+    if (material_value.values) {
+      JsonValue updated = *material_value.values;
+      remap_optional_indices(updated, m_oldnew);
+      material_value.values = std::move(updated);
+    }
+  }
+}
+
+void Geometry::update_texture(IndexMap &t_oldnew, IndexMap &t_v_oldnew,
+                              std::size_t offset) {
+  if (!texture) {
+    return;
+  }
+  for (auto &[_, texture_value] : *texture) {
+    if (texture_value.values) {
+      JsonValue updated = *texture_value.values;
+      remap_texture_values(updated, t_oldnew, t_v_oldnew, offset);
+      texture_value.values = std::move(updated);
+    }
+  }
+}
+
+Address Address::from_json(const JsonValue &value) {
+  Address address;
+  address.thoroughfare_number = static_cast<std::int64_t>(
+      value.at("thoroughfareNumber").get<std::int64_t>());
+  address.thoroughfare_name = value.at("thoroughfareName").get<std::string>();
+  address.locality = value.at("locality").get<std::string>();
+  address.postal_code = value.at("postalCode").get<std::string>();
+  address.country = value.at("country").get<std::string>();
+  return address;
+}
+
+PointOfContact::PointOfContact() = default;
+
+PointOfContact PointOfContact::from_json(const JsonValue &value) {
+  PointOfContact contact;
+  contact.contact_name = value.at("contactName").get<std::string>();
+  if (value.contains("contactType")) {
+    contact.contact_type = value.at("contactType").get<std::string>();
+  }
+  if (value.contains("role")) {
+    contact.role = value.at("role").get<std::string>();
+  }
+  if (value.contains("phone")) {
+    contact.phone = value.at("phone").get<std::string>();
+  }
+  contact.email_address = value.at("emailAddress").get<std::string>();
+  if (value.contains("website")) {
+    contact.website = value.at("website").get<std::string>();
+  }
+  if (value.contains("address")) {
+    contact.address = Address::from_json(value.at("address"));
+  }
+  return contact;
+}
+
+ReferenceSystem ReferenceSystem::from_url(const std::string &url) {
+  const std::string needle = "/crs/";
+  const auto pos = url.find(needle);
+  if (pos == std::string::npos) {
+    throw std::runtime_error("Invalid reference system URL: " + url);
+  }
+
+  ReferenceSystem ref;
+  ref.base_url = url.substr(0, pos + needle.size() - 1);
+  std::string remainder = url.substr(pos + needle.size());
+
+  std::vector<std::string> parts;
+  std::size_t start = 0;
+  while (true) {
+    const auto slash = remainder.find('/', start);
+    if (slash == std::string::npos) {
+      parts.emplace_back(remainder.substr(start));
+      break;
+    }
+    parts.emplace_back(remainder.substr(start, slash - start));
+    start = slash + 1;
+  }
+
+  parts.erase(std::remove_if(
+                  parts.begin(), parts.end(),
+                  [](const std::string &segment) { return segment.empty(); }),
+              parts.end());
+
+  if (parts.size() != 3) {
+    throw std::runtime_error("Invalid reference system URL: " + url);
+  }
+
+  ref.authority = parts[0];
+  ref.version = parts[1];
+  ref.code = parts[2];
+  return ref;
+}
+
+ReferenceSystem ReferenceSystem::from_json(const JsonValue &value) {
+  if (value.is_string()) {
+    return from_url(value.get<std::string>());
+  }
+  ReferenceSystem ref;
+  ref.base_url = value.value("baseUrl", "https://www.opengis.net/def/crs");
+  ref.authority = value.value("authority", "");
+  ref.version = value.value("version", "");
+  ref.code = value.value("code", "");
+  return ref;
+}
+
+JsonValue ReferenceSystem::to_json(const ReferenceSystem &ref) {
+  return JsonValue(to_url(ref));
+}
+
+std::string ReferenceSystem::to_url(const ReferenceSystem &ref) {
+  return ref.base_url + "/" + ref.authority + "/" + ref.version + "/" +
+         ref.code;
+}
+
+Metadata::Metadata() = default;
+
+Metadata Metadata::from_json(const JsonValue &value) {
+  Metadata metadata;
+  if (value.contains("geographicalExtent")) {
+    const auto extent =
+        value.at("geographicalExtent").get<std::vector<double>>();
+    if (extent.size() == 6) {
+      metadata.geographical_extent = {extent[0], extent[1], extent[2],
+                                      extent[3], extent[4], extent[5]};
+    }
+  }
+  if (value.contains("identifier")) {
+    metadata.identifier = value.at("identifier").get<std::string>();
+  }
+  if (value.contains("pointOfContact")) {
+    metadata.point_of_contact =
+        PointOfContact::from_json(value.at("pointOfContact"));
+  }
+  if (value.contains("referenceDate")) {
+    metadata.reference_date = value.at("referenceDate").get<std::string>();
+  }
+  if (value.contains("referenceSystem")) {
+    metadata.reference_system =
+        ReferenceSystem::from_json(value.at("referenceSystem"));
+  }
+  if (value.contains("title")) {
+    metadata.title = value.at("title").get<std::string>();
+  }
+  return metadata;
+}
+
+GeometryTemplates::GeometryTemplates() = default;
+
+GeometryTemplates GeometryTemplates::from_json(const JsonValue &value) {
+  GeometryTemplates templates;
+  if (value.contains("templates")) {
+    const auto &templates_array = value.at("templates");
+    if (templates_array.is_array()) {
+      templates.templates.reserve(templates_array.size());
+      for (const auto &geometry_value : templates_array) {
+        templates.templates.emplace_back(Geometry::from_json(geometry_value));
+      }
+    }
+  }
+  if (value.contains("vertices-templates")) {
+    templates.vertices_templates = value.at("vertices-templates");
+  } else {
+    templates.vertices_templates = JsonValue::array();
+  }
+  return templates;
+}
+
 CityObject::CityObject() : type(""), other(JsonValue::object()) {}
+
+std::string CityObject::get_type() const { return type; }
 
 bool CityObject::is_toplevel() const { return parents.empty(); }
 
@@ -93,8 +556,97 @@ std::vector<std::string> CityObject::get_children_keys() const {
   return children;
 }
 
+CityJSONFeature::CityJSONFeature() : type_("CityJSONFeature"), id_("") {}
+
+CityJSONFeature CityJSONFeature::from_json(const JsonValue &value) {
+  CityJSONFeature feature;
+  if (value.contains("type")) {
+    feature.type_ = value.at("type").get<std::string>();
+  }
+  if (value.contains("id")) {
+    feature.id_ = value.at("id").get<std::string>();
+  }
+
+  if (value.contains("CityObjects")) {
+    const auto &objects = value.at("CityObjects");
+    for (const auto &[key, entry] : objects.items()) {
+      feature.city_objects_.emplace(key, parse_city_object(entry));
+    }
+  }
+
+  if (value.contains("vertices")) {
+    feature.vertices_ =
+        value.at("vertices").get<std::vector<std::vector<int64_t>>>();
+  }
+
+  if (value.contains("appearance")) {
+    feature.appearance_ = Appearance::from_json(value.at("appearance"));
+  }
+
+  return feature;
+}
+
+CityJSONFeature CityJSONFeature::parse(const std::string &json_text) {
+  return from_json(JsonValue::parse(json_text));
+}
+
+void CityJSONFeature::add_city_object(const std::string &id,
+                                      CityObject object) {
+  city_objects_.insert_or_assign(id, std::move(object));
+}
+
+const std::string &CityJSONFeature::type() const noexcept { return type_; }
+
+const std::string &CityJSONFeature::id() const noexcept { return id_; }
+
+void CityJSONFeature::set_id(std::string id) { id_ = std::move(id); }
+
+const std::unordered_map<std::string, CityObject> &
+CityJSONFeature::city_objects() const noexcept {
+  return city_objects_;
+}
+
+std::unordered_map<std::string, CityObject> &CityJSONFeature::city_objects() {
+  return city_objects_;
+}
+
+const std::vector<std::vector<int64_t>> &
+CityJSONFeature::vertices() const noexcept {
+  return vertices_;
+}
+
+std::vector<std::vector<int64_t>> &CityJSONFeature::vertices() {
+  return vertices_;
+}
+
+const std::optional<Appearance> &CityJSONFeature::appearance() const noexcept {
+  return appearance_;
+}
+
+void CityJSONFeature::set_appearance(std::optional<Appearance> appearance) {
+  appearance_ = std::move(appearance);
+}
+
+std::vector<double> CityJSONFeature::centroid() const {
+  if (vertices_.empty()) {
+    return {0.0, 0.0, 0.0};
+  }
+  std::array<double, 3> totals{0.0, 0.0, 0.0};
+  for (const auto &vertex : vertices_) {
+    for (std::size_t i = 0; i < std::min<std::size_t>(3, vertex.size()); ++i) {
+      totals[i] += static_cast<double>(vertex[i]);
+    }
+  }
+  const double count = static_cast<double>(vertices_.size());
+  for (double &value : totals) {
+    value /= count;
+  }
+  return {totals[0], totals[1], totals[2]};
+}
+
 CityJSON::CityJSON()
-    : type_("CityJSON"), version_("2.0"), transform_(),
+    : type_("CityJSON"), version_("2.0"), transform_(), metadata_(std::nullopt),
+      appearance_(std::nullopt), geometry_templates_(std::nullopt),
       other_(JsonValue::object()) {}
 
 CityJSON CityJSON::from_json(const JsonValue &value) {
@@ -116,11 +668,7 @@ CityJSON CityJSON::from_json(const JsonValue &value) {
 
   const auto &city_objects_json = value.at("CityObjects");
   for (const auto &[id, entry] : city_objects_json.items()) {
-    CityObject object = parse_city_object(entry);
-    if (object.is_toplevel()) {
-      document.sorted_ids_.push_back(id);
-    }
-    document.city_objects_.emplace(id, std::move(object));
+    document.city_objects_.emplace(id, parse_city_object(entry));
   }
 
   if (value.contains("vertices")) {
@@ -129,15 +677,16 @@ CityJSON CityJSON::from_json(const JsonValue &value) {
   }
 
   if (value.contains("metadata")) {
-    document.metadata_ = value.at("metadata");
+    document.metadata_ = Metadata::from_json(value.at("metadata"));
   }
 
   if (value.contains("appearance")) {
-    document.appearance_ = value.at("appearance");
+    document.appearance_ = Appearance::from_json(value.at("appearance"));
   }
 
   if (value.contains("geometry-templates")) {
-    document.geometry_templates_ = value.at("geometry-templates");
+    document.geometry_templates_ =
+        GeometryTemplates::from_json(value.at("geometry-templates"));
   }
 
   if (value.contains("extensions")) {
@@ -181,6 +730,25 @@ const std::vector<std::string> &CityJSON::sorted_ids() const noexcept {
   return sorted_ids_;
 }
 
+const std::optional<Metadata> &CityJSON::metadata() const noexcept {
+  return metadata_;
+}
+
+const std::optional<Appearance> &CityJSON::appearance() const noexcept {
+  return appearance_;
+}
+
+const std::optional<GeometryTemplates> &
+CityJSON::geometry_templates() const noexcept {
+  return geometry_templates_;
+}
+
+const std::optional<JsonValue> &CityJSON::extensions() const noexcept {
+  return extensions_;
+}
+
+const JsonValue &CityJSON::other() const noexcept { return other_; }
+
 std::size_t CityJSON::number_of_city_objects() const {
   return sorted_ids_.size();
 }
@@ -189,7 +757,6 @@ void CityJSON::sort_cjfeatures(SortingStrategy strategy) {
   populate_sorted_ids();
   switch (strategy) {
   case SortingStrategy::Random:
-    // Keep the existing insertion order that populate_sorted_ids produced.
     break;
   case SortingStrategy::Lexicographical:
     std::sort(sorted_ids_.begin(), sorted_ids_.end());

@@ -1,7 +1,9 @@
 #include "cjseq/cityjson.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <unordered_map>
 
 namespace {
 
@@ -16,11 +18,41 @@ std::string sample_cityjson_document() {
     "CityObjects": {
       "building-1": {
         "type": "Building",
-        "children": ["building-1-child"]
+        "children": ["building-1-child"],
+        "geometry": [
+          {
+            "type": "MultiSurface",
+            "lod": "2.0",
+            "boundaries": [[[0, 1, 2, 3]]],
+            "material": {
+              "default": {
+                "value": 0
+              }
+            },
+            "texture": {
+              "default": {
+                "values": [
+                  [
+                    [
+                      [0, 0],
+                      [1, 2]
+                    ]
+                  ]
+                ]
+              }
+            }
+          }
+        ]
       },
       "building-1-child": {
         "type": "BuildingPart",
-        "parents": ["building-1"]
+        "parents": ["building-1"],
+        "geometry": [
+          {
+            "type": "MultiPoint",
+            "boundaries": [0, 1]
+          }
+        ]
       }
     },
     "vertices": [
@@ -33,6 +65,30 @@ std::string sample_cityjson_document() {
 }
 
 } // namespace
+
+std::string sample_feature_document() {
+  return R"JSON({
+    "type": "CityJSONFeature",
+    "id": "feature-1",
+    "CityObjects": {
+      "building-1": {
+        "type": "Building",
+        "geometry": [
+          {
+            "type": "MultiSurface",
+            "boundaries": [[[0, 1, 2, 3]]]
+          }
+        ]
+      }
+    },
+    "vertices": [
+      [0, 0, 0],
+      [1, 0, 0],
+      [1, 1, 0],
+      [0, 1, 0]
+    ]
+  })JSON";
+}
 
 int main() {
   const auto json_text = sample_cityjson_document();
@@ -52,6 +108,27 @@ int main() {
   assert(building.is_toplevel());
   assert(!child.is_toplevel());
 
+  assert(building.geometry.has_value());
+  assert(!building.geometry->empty());
+  assert(building.get_type() == "Building");
+
+  auto geometry_copy = building.geometry.value().front();
+  std::unordered_map<std::size_t, std::size_t> vertex_map;
+  geometry_copy.update_geometry_boundaries(vertex_map);
+  assert(vertex_map.size() == 4);
+
+  geometry_copy.offset_geometry_boundaries(10);
+
+  std::unordered_map<std::size_t, std::size_t> material_map;
+  geometry_copy.update_material(material_map);
+  assert(material_map.size() == 1);
+
+  std::unordered_map<std::size_t, std::size_t> texture_map;
+  std::unordered_map<std::size_t, std::size_t> texture_vertex_map;
+  geometry_copy.update_texture(texture_map, texture_vertex_map, 5);
+  assert(texture_map.size() == 2);
+  assert(texture_vertex_map.size() == 2);
+
   const auto children_keys = building.get_children_keys();
   assert(children_keys.size() == 1);
   assert(children_keys[0] == "building-1-child");
@@ -62,6 +139,45 @@ int main() {
   const auto &sorted = cityjson.sorted_ids();
   assert(sorted.size() == 1);
   assert(sorted[0] == "building-1");
+
+  assert(!cityjson.metadata().has_value());
+  assert(!cityjson.appearance().has_value());
+  assert(!cityjson.geometry_templates().has_value());
+
+  auto feature = cjseq::CityJSONFeature::parse(sample_feature_document());
+  assert(feature.type() == "CityJSONFeature");
+  assert(feature.id() == "feature-1");
+  const auto centroid = feature.centroid();
+  assert(std::fabs(centroid[0] - 0.5) < 1e-9);
+  assert(std::fabs(centroid[1] - 0.5) < 1e-9);
+  assert(std::fabs(centroid[2]) < 1e-9);
+
+  cjseq::CityJSONFeature feature2;
+  feature2.set_id("feature-2");
+  cjseq::CityObject bridge;
+  bridge.type = "Bridge";
+  feature2.add_city_object("bridge-1", bridge);
+  assert(feature2.city_objects().size() == 1);
+  assert(feature2.city_objects().at("bridge-1").get_type() == "Bridge");
+
+  cjseq::Appearance custom_appearance;
+  custom_appearance.default_theme_material = "default";
+  feature2.set_appearance(custom_appearance);
+  assert(feature2.appearance().has_value());
+
+  cjseq::Appearance appearance;
+  cjseq::JsonValue material = cjseq::JsonValue::object();
+  material["effect"] = "matte";
+  const std::size_t material_index = appearance.add_material(material);
+  assert(material_index == 0);
+  const std::size_t material_index_duplicate =
+      appearance.add_material(material);
+  assert(material_index_duplicate == material_index);
+
+  cjseq::ReferenceSystem reference = cjseq::ReferenceSystem::from_url(
+      "https://www.opengis.net/def/crs/EPSG/0/7415");
+  assert(reference.authority == "EPSG");
+  assert(reference.code == "7415");
 
   std::cout << "All cjseq tests passed." << std::endl;
   return 0;
