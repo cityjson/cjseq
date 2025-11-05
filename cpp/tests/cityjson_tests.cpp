@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <unordered_map>
 
 namespace {
@@ -133,6 +134,16 @@ int main() {
   assert(children_keys.size() == 1);
   assert(children_keys[0] == "building-1-child");
 
+  auto metadata_doc = cityjson.get_metadata();
+  assert(metadata_doc.city_objects().empty());
+  assert(metadata_doc.vertices().empty());
+
+  auto feature_opt = cityjson.get_cjfeature(0);
+  assert(feature_opt.has_value());
+  auto feature_slice = feature_opt.value();
+  assert(feature_slice.city_objects().size() == 2);
+  assert(feature_slice.vertices().size() == 4);
+
   assert(cityjson.number_of_city_objects() == 1);
 
   cityjson.sort_cjfeatures(cjseq::SortingStrategy::Lexicographical);
@@ -143,6 +154,9 @@ int main() {
   assert(!cityjson.metadata().has_value());
   assert(!cityjson.appearance().has_value());
   assert(!cityjson.geometry_templates().has_value());
+
+  auto slice_again = cityjson.get_cjfeature(10);
+  assert(!slice_again.has_value());
 
   auto feature = cjseq::CityJSONFeature::parse(sample_feature_document());
   assert(feature.type() == "CityJSONFeature");
@@ -164,6 +178,14 @@ int main() {
   custom_appearance.default_theme_material = "default";
   feature2.set_appearance(custom_appearance);
   assert(feature2.appearance().has_value());
+
+  cjseq::CityJSON collector = metadata_doc;
+  collector.add_cjfeature(feature_slice);
+  assert(collector.number_of_city_objects() == 1);
+  assert(collector.city_objects().size() == 2);
+  assert(collector.vertices().size() == 4);
+  auto back_slice_opt = collector.get_cjfeature(0);
+  assert(back_slice_opt.has_value());
 
   cjseq::Appearance appearance;
   cjseq::JsonValue material = cjseq::JsonValue::object();

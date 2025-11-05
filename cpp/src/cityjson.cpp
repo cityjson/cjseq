@@ -774,6 +774,234 @@ void CityJSON::populate_sorted_ids() {
   }
 }
 
+void CityJSON::ensure_sorted_ids_initialized() {
+  if (!sorted_ids_.empty()) {
+    return;
+  }
+  populate_sorted_ids();
+}
+
+void CityJSON::append_vertices(
+    const std::vector<std::vector<int64_t>> &vertices) {
+  vertices_.insert(vertices_.end(), vertices.begin(), vertices.end());
+}
+
+std::size_t CityJSON::add_material(const JsonValue &material) {
+  if (!appearance_) {
+    appearance_ = Appearance();
+  }
+  return appearance_->add_material(material);
+}
+
+std::size_t CityJSON::add_texture(const JsonValue &texture) {
+  if (!appearance_) {
+    appearance_ = Appearance();
+  }
+  return appearance_->add_texture(texture);
+}
+
+std::size_t CityJSON::add_vertices_texture(
+    const std::vector<std::vector<double>> &vertices) {
+  if (!appearance_) {
+    appearance_ = Appearance();
+  }
+  if (!appearance_->vertices_texture) {
+    appearance_->vertices_texture = std::vector<std::vector<double>>{};
+  }
+  auto &list = *appearance_->vertices_texture;
+  const std::size_t offset = list.size();
+  list.insert(list.end(), vertices.begin(), vertices.end());
+  return offset;
+}
+
+CityJSON CityJSON::get_metadata() const {
+  CityJSON metadata_doc;
+  metadata_doc.type_ = type_;
+  metadata_doc.version_ = version_;
+  metadata_doc.transform_ = transform_;
+  metadata_doc.metadata_ = metadata_;
+  metadata_doc.geometry_templates_ = geometry_templates_;
+  metadata_doc.extensions_ = extensions_;
+  metadata_doc.other_ = other_;
+  return metadata_doc;
+}
+
+std::optional<CityJSONFeature>
+CityJSON::get_cjfeature(std::size_t index) const {
+  if (city_objects_.empty()) {
+    return std::nullopt;
+  }
+
+  const_cast<CityJSON *>(this)->ensure_sorted_ids_initialized();
+
+  if (index >= sorted_ids_.size()) {
+    return std::nullopt;
+  }
+
+  const std::string &top_id = sorted_ids_.at(index);
+  const auto object_it = city_objects_.find(top_id);
+  if (object_it == city_objects_.end()) {
+    return std::nullopt;
+  }
+
+  CityJSONFeature feature;
+  feature.set_id(top_id);
+
+  IndexMap vertex_map;
+  IndexMap material_map;
+  IndexMap texture_map;
+  IndexMap texture_vertex_map;
+
+  const auto append_object = [&](const std::string &id,
+                                 const CityObject &object) {
+    CityObject copy = object;
+    if (copy.geometry) {
+      for (auto &geometry : *copy.geometry) {
+        geometry.update_geometry_boundaries(vertex_map);
+        geometry.update_material(material_map);
+        geometry.update_texture(texture_map, texture_vertex_map, 0);
+      }
+    }
+    feature.add_city_object(id, std::move(copy));
+  };
+
+  append_object(top_id, object_it->second);
+
+  const auto children_keys = object_it->second.get_children_keys();
+  for (const auto &child_id : children_keys) {
+    const auto child_it = city_objects_.find(child_id);
+    if (child_it == city_objects_.end()) {
+      continue;
+    }
+    append_object(child_id, child_it->second);
+  }
+
+  std::vector<std::vector<int64_t>> collected_vertices(vertex_map.size());
+  for (const auto &[old_index, new_index] : vertex_map) {
+    if (old_index < vertices_.size()) {
+      collected_vertices.at(new_index) = vertices_.at(old_index);
+    }
+  }
+  feature.vertices() = std::move(collected_vertices);
+
+  if (appearance_) {
+    Appearance feature_appearance;
+    bool has_data = false;
+    if (appearance_->default_theme_material) {
+      feature_appearance.default_theme_material =
+          appearance_->default_theme_material;
+      has_data = true;
+    }
+    if (appearance_->default_theme_texture) {
+      feature_appearance.default_theme_texture =
+          appearance_->default_theme_texture;
+      has_data = true;
+    }
+    if (appearance_->materials) {
+      std::vector<JsonValue> materials(material_map.size(), JsonValue());
+      for (const auto &[old_index, new_index] : material_map) {
+        if (old_index < appearance_->materials->size()) {
+          materials.at(new_index) = appearance_->materials->at(old_index);
+        }
+      }
+      feature_appearance.materials = std::move(materials);
+      has_data = has_data || !material_map.empty();
+    }
+    if (appearance_->textures) {
+      std::vector<JsonValue> textures(texture_map.size(), JsonValue());
+      for (const auto &[old_index, new_index] : texture_map) {
+        if (old_index < appearance_->textures->size()) {
+          textures.at(new_index) = appearance_->textures->at(old_index);
+        }
+      }
+      feature_appearance.textures = std::move(textures);
+      has_data = has_data || !texture_map.empty();
+    }
+    if (appearance_->vertices_texture) {
+      std::vector<std::vector<double>> vertices_texture(
+          texture_vertex_map.size(), std::vector<double>());
+      for (const auto &[old_index, new_index] : texture_vertex_map) {
+        if (old_index < appearance_->vertices_texture->size()) {
+          vertices_texture.at(new_index) =
+              appearance_->vertices_texture->at(old_index);
+        }
+      }
+      feature_appearance.vertices_texture = std::move(vertices_texture);
+      has_data = has_data || !texture_vertex_map.empty();
+    }
+
+    if (has_data) {
+      feature.set_appearance(std::move(feature_appearance));
+    }
+  }
+
+  return feature;
+}
+
+void CityJSON::add_cjfeature(CityJSONFeature &feature) {
+  IndexMap material_map;
+  IndexMap texture_map;
+  IndexMap vertex_texture_map;
+
+  const std::size_t vertex_offset = vertices_.size();
+  std::size_t vertex_texture_offset = 0;
+  if (appearance_ && appearance_->vertices_texture) {
+    vertex_texture_offset = appearance_->vertices_texture->size();
+  }
+
+  if (const auto feature_appearance_opt = feature.appearance()) {
+    const auto &feature_appearance = *feature_appearance_opt;
+
+    if (feature_appearance.materials) {
+      for (std::size_t i = 0; i < feature_appearance.materials->size(); ++i) {
+        const auto &material_value = feature_appearance.materials->at(i);
+        const std::size_t mapped_index = add_material(material_value);
+        material_map.emplace(i, mapped_index);
+      }
+    }
+    if (feature_appearance.textures) {
+      for (std::size_t i = 0; i < feature_appearance.textures->size(); ++i) {
+        const auto &texture_value = feature_appearance.textures->at(i);
+        const std::size_t mapped_index = add_texture(texture_value);
+        texture_map.emplace(i, mapped_index);
+      }
+    }
+    if (feature_appearance.vertices_texture) {
+      vertex_texture_offset =
+          add_vertices_texture(*feature_appearance.vertices_texture);
+    }
+    if (feature_appearance.default_theme_material) {
+      if (!appearance_) {
+        appearance_ = Appearance();
+      }
+      appearance_->default_theme_material =
+          feature_appearance.default_theme_material;
+    }
+    if (feature_appearance.default_theme_texture) {
+      if (!appearance_) {
+        appearance_ = Appearance();
+      }
+      appearance_->default_theme_texture =
+          feature_appearance.default_theme_texture;
+    }
+  }
+
+  for (auto &[id, object] : feature.city_objects()) {
+    if (object.geometry) {
+      for (auto &geometry : *object.geometry) {
+        geometry.offset_geometry_boundaries(vertex_offset);
+        geometry.update_material(material_map);
+        geometry.update_texture(texture_map, vertex_texture_map,
+                                vertex_texture_offset);
+      }
+    }
+    city_objects_.insert_or_assign(id, object);
+  }
+
+  append_vertices(feature.vertices());
+  sorted_ids_.push_back(feature.id());
+}
+
 CityJSON parse_cityjson(const std::string &json_text) {
   return CityJSON::parse(json_text);
 }

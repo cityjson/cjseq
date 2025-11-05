@@ -84,12 +84,10 @@ struct Geometry {
   void update_geometry_boundaries(
       std::unordered_map<std::size_t, std::size_t> &vi_oldnew);
   void offset_geometry_boundaries(std::size_t offset);
-  void update_material(
-      std::unordered_map<std::size_t, std::size_t> &m_oldnew);
-  void update_texture(
-      std::unordered_map<std::size_t, std::size_t> &t_oldnew,
-      std::unordered_map<std::size_t, std::size_t> &t_v_oldnew,
-      std::size_t offset);
+  void update_material(std::unordered_map<std::size_t, std::size_t> &m_oldnew);
+  void update_texture(std::unordered_map<std::size_t, std::size_t> &t_oldnew,
+                      std::unordered_map<std::size_t, std::size_t> &t_v_oldnew,
+                      std::size_t offset);
 };
 
 struct Vertex {
@@ -188,7 +186,8 @@ public:
   city_objects() const noexcept;
   [[nodiscard]] std::unordered_map<std::string, CityObject> &city_objects();
 
-  [[nodiscard]] const std::vector<std::vector<int64_t>> &vertices() const noexcept;
+  [[nodiscard]] const std::vector<std::vector<int64_t>> &
+  vertices() const noexcept;
   [[nodiscard]] std::vector<std::vector<int64_t>> &vertices();
 
   [[nodiscard]] const std::optional<Appearance> &appearance() const noexcept;
@@ -221,13 +220,16 @@ public:
   [[nodiscard]] const std::vector<std::string> &sorted_ids() const noexcept;
   [[nodiscard]] const std::optional<Metadata> &metadata() const noexcept;
   [[nodiscard]] const std::optional<Appearance> &appearance() const noexcept;
-  [[nodiscard]] const std::optional<GeometryTemplates> &geometry_templates() const
-      noexcept;
+  [[nodiscard]] const std::optional<GeometryTemplates> &
+  geometry_templates() const noexcept;
   [[nodiscard]] const std::optional<JsonValue> &extensions() const noexcept;
   [[nodiscard]] const JsonValue &other() const noexcept;
   [[nodiscard]] std::size_t number_of_city_objects() const;
 
   void sort_cjfeatures(SortingStrategy strategy);
+  [[nodiscard]] CityJSON get_metadata() const;
+  std::optional<CityJSONFeature> get_cjfeature(std::size_t index) const;
+  void add_cjfeature(CityJSONFeature &feature);
 
 private:
   std::string type_;
@@ -243,6 +245,12 @@ private:
   std::vector<std::string> sorted_ids_;
 
   void populate_sorted_ids();
+  void ensure_sorted_ids_initialized();
+  void append_vertices(const std::vector<std::vector<int64_t>> &vertices);
+  std::size_t add_material(const JsonValue &material);
+  std::size_t add_texture(const JsonValue &texture);
+  std::size_t
+  add_vertices_texture(const std::vector<std::vector<double>> &vertices);
 };
 
 CityJSON parse_cityjson(const std::string &json_text);
