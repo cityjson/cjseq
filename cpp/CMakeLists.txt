@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 project(cjseq_cpp VERSION 0.1.0 LANGUAGES CXX)
 
+include(CTest)
+
 # Enable compile_commands.json for tooling.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -41,3 +43,18 @@ target_link_libraries(cjseq_cli
 )
 
 target_compile_features(cjseq_cli PRIVATE cxx_std_20)
+
+if(BUILD_TESTING)
+    add_executable(cjseq_tests
+        tests/cityjson_tests.cpp
+    )
+
+    target_link_libraries(cjseq_tests
+        PRIVATE
+            cjseq
+    )
+
+    target_compile_features(cjseq_tests PRIVATE cxx_std_20)
+
+    add_test(NAME cjseq_tests COMMAND cjseq_tests)
+endif()
