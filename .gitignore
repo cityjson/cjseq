@@ -16,3 +16,63 @@ Cargo.lock
 .idea/*
 .polyscope.ini
 imgui.ini
+
+# C++ build artifacts
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+compile_commands.json
+
+# Object files, binaries, libraries
+*.o
+*.obj
+*.so
+*.so.*
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+*.out
+
+# Generated/precompiled headers
+*.gch
+*.pch
+
+# IDE/editor/workspace
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.vcxproj*
+*.vcproj*
+*.log
+
+# Qt creator
+*.pro.user*
+*.qbs.user*
+*.moc
+*.qrc
+*.cproject
+*.kdev4
+*.kate-swp
+
+# CLion
+cmake-build-*/
+.idea/
+
+# VS Code
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Extra
+*.swp
+*.bak
+*.tmp
+
+.cache/
