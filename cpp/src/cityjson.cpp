@@ -1,4 +1,7 @@
 #include "cjseq/cityjson.hpp"
+// Implementation of the high-level CityJSON data model and helpers for the C++
+// port. Most functions mirror the Rust reference implementation and focus on
+// keeping JSON index bookkeeping consistent when slicing or merging features.
 
 #include <algorithm>
 #include <array>
@@ -22,6 +25,9 @@ constexpr std::array<const char *, 6> kCityObjectKnownKeys = {
     "type",     "geographicalExtent", "attributes",
     "geometry", "children",           "parents"};
 
+// Converts a string literal from a CityJSON document into the strongly typed
+// GeometryType enum. Throws when encountering an unknown geometry tag so that
+// unsupported inputs fail loudly during parsing.
 GeometryType geometry_type_from_string(const std::string &value) {
   if (value == "MultiPoint") {
     return GeometryType::MultiPoint;
@@ -50,12 +56,16 @@ GeometryType geometry_type_from_string(const std::string &value) {
   throw std::runtime_error("Unsupported geometry type: " + value);
 }
 
+// True when `key` is part of the known top-level CityJSON keys. Used to
+// capture unknown / extension properties while still copying them around.
 bool is_known_key(std::string_view key,
                   const std::array<const char *, 9> &known_keys) {
   return std::any_of(known_keys.begin(), known_keys.end(),
                      [&](const char *candidate) { return key == candidate; });
 }
 
+// Same helper as above but scoped for CityObject entries. This allows us to
+// separate standard fields from custom ones that should be preserved verbatim.
 bool is_known_object_key(std::string_view key,
                          const std::array<const char *, 6> &known_keys) {
   return std::any_of(known_keys.begin(), known_keys.end(),
@@ -72,6 +82,9 @@ std::size_t ensure_index(IndexMap &map, std::size_t original) {
   return next;
 }
 
+// Recursively traverses a JSON hierarchy and replaces vertex indices according
+// to the provided map. Used when extracting a subset of geometry so that vertex
+// references remain contiguous and zero-based.
 void remap_vertex_indices(JsonValue &value, IndexMap &map) {
   if (value.is_null()) {
     return;
@@ -93,6 +106,9 @@ void remap_vertex_indices(JsonValue &value, IndexMap &map) {
   }
 }
 
+// Adds a constant offset to every vertex index found in `value`. Leveraged when
+// merging a feature into a larger CityJSON document to account for vertices
+// that are appended to the global list.
 void apply_vertex_offset(JsonValue &value, std::size_t offset) {
   if (value.is_null()) {
     return;
@@ -113,6 +129,8 @@ void apply_vertex_offset(JsonValue &value, std::size_t offset) {
   }
 }
 
+// Performs the same remapping as `remap_vertex_indices` but for optional data
+// structures such as semantic/material indices where nulls may be present.
 void remap_optional_indices(JsonValue &value, IndexMap &map) {
   if (value.is_null()) {
     return;
@@ -134,6 +152,9 @@ void remap_optional_indices(JsonValue &value, IndexMap &map) {
   }
 }
 
+// Updates texture/material JSON structures while simultaneously remapping both
+// texture IDs and texture vertex indices. The `offset` parameter represents the
+// existing number of texture vertices in the destination document.
 void remap_texture_values(JsonValue &value, IndexMap &tex_map,
                           IndexMap &vertex_tex_map, std::size_t offset) {
   if (value.is_null()) {
@@ -164,6 +185,8 @@ void remap_texture_values(JsonValue &value, IndexMap &tex_map,
   }
 }
 
+// Reads a CityJSON transform object and converts it to our Transform struct.
+// Missing fields fall back to defaults (identity scale and zero translate).
 Transform parse_transform(const JsonValue &value) {
   Transform transform;
   if (value.contains("scale")) {
@@ -175,10 +198,14 @@ Transform parse_transform(const JsonValue &value) {
   return transform;
 }
 
+// Delegating wrapper that converts raw JSON geometry into the Geometry struct.
 Geometry parse_geometry(const JsonValue &value) {
   return Geometry::from_json(value);
 }
 
+// Converts a CityObject JSON entry into the strongly typed CityObject struct,
+// collecting both standard fields and any unknown properties that must be
+// preserved when round-tripping the document.
 CityObject parse_city_object(const JsonValue &value) {
   if (!value.contains("type")) {
     throw std::runtime_error("CityObject is missing required field 'type'");
@@ -232,10 +259,14 @@ CityObject parse_city_object(const JsonValue &value) {
 
 } // namespace
 
+// Default transform uses unit scaling so that raw vertex integers are treated
+// as already scaled coordinates unless a document overrides the values.
 Transform::Transform() : scale({1.0, 1.0, 1.0}), translate({0.0, 0.0, 0.0}) {}
 
 Material::Material() = default;
 
+// Extracts material information while keeping both single-value and per-face
+// arrays. It mirrors serde's default behaviour by ignoring missing fields.
 Material Material::from_json(const JsonValue &value) {
   Material material;
   if (value.contains("value")) {
@@ -250,6 +281,8 @@ Material Material::from_json(const JsonValue &value) {
 
 Texture::Texture() = default;
 
+// Parses texture JSON values and stores them for later remapping / merging. The
+// JSON is kept as-is because textures may contain nested arrays.
 Texture Texture::from_json(const JsonValue &value) {
   Texture texture;
   if (value.contains("values")) {
@@ -260,6 +293,8 @@ Texture Texture::from_json(const JsonValue &value) {
 
 Appearance::Appearance() = default;
 
+// Parses the top-level appearance map while leaving nested JSON structures
+// untouched. The optional fields follow the CityJSON schema.
 Appearance Appearance::from_json(const JsonValue &value) {
   Appearance appearance;
   if (value.contains("materials")) {
@@ -283,6 +318,8 @@ Appearance Appearance::from_json(const JsonValue &value) {
   return appearance;
 }
 
+// Adds a material only if it is not already present and returns the final
+// index. This keeps the list deduplicated while mimicking the Rust API.
 std::size_t Appearance::add_material(JsonValue material) {
   if (!materials) {
     materials = std::vector<JsonValue>{};
@@ -296,6 +333,8 @@ std::size_t Appearance::add_material(JsonValue material) {
   return list.size() - 1;
 }
 
+// Mirrors add_material for textures, ensuring we reuse identical entries for
+// determinism and compactness.
 std::size_t Appearance::add_texture(JsonValue texture) {
   if (!textures) {
     textures = std::vector<JsonValue>{};
@@ -309,6 +348,8 @@ std::size_t Appearance::add_texture(JsonValue texture) {
   return list.size() - 1;
 }
 
+// Appends all provided texture vertices while ensuring the optional wrapper is
+// correctly initialised. The caller is responsible for tracking offsets.
 void Appearance::add_vertices_texture(
     std::vector<std::vector<double>> vertices) {
   if (!vertices_texture) {
@@ -320,6 +361,9 @@ void Appearance::add_vertices_texture(
 
 Geometry::Geometry() = default;
 
+// Builds a Geometry from JSON, keeping complex boundary/appearance structures
+// intact for later remapping. This mirrors the layout expected by the Rust
+// reference implementation.
 Geometry Geometry::from_json(const JsonValue &value) {
   Geometry geometry;
   geometry.type =
@@ -357,18 +401,24 @@ Geometry Geometry::from_json(const JsonValue &value) {
   return geometry;
 }
 
+// Remaps every vertex index referenced by the geometry according to the
+// provided index map. This is central to slicing a feature into a standalone
+// document with compact vertex arrays.
 void Geometry::update_geometry_boundaries(IndexMap &vi_oldnew) {
   JsonValue updated = boundaries;
   remap_vertex_indices(updated, vi_oldnew);
   boundaries = std::move(updated);
 }
 
+// Offsets all vertex indices by `offset`. Used when merging a feature back into
+// a document that already contains vertices.
 void Geometry::offset_geometry_boundaries(std::size_t offset) {
   JsonValue updated = boundaries;
   apply_vertex_offset(updated, offset);
   boundaries = std::move(updated);
 }
 
+// Updates material indices inside the geometry according to the remapping map.
 void Geometry::update_material(IndexMap &m_oldnew) {
   if (!material) {
     return;
@@ -386,6 +436,8 @@ void Geometry::update_material(IndexMap &m_oldnew) {
   }
 }
 
+// Updates texture references and texture vertex indices while accounting for
+// existing vertices in the destination appearance block.
 void Geometry::update_texture(IndexMap &t_oldnew, IndexMap &t_v_oldnew,
                               std::size_t offset) {
   if (!texture) {
@@ -400,6 +452,8 @@ void Geometry::update_texture(IndexMap &t_oldnew, IndexMap &t_v_oldnew,
   }
 }
 
+// Parses the address block used by metadata contacts. Required fields mirror
+// the CityJSON specification; optional keys are ignored when missing.
 Address Address::from_json(const JsonValue &value) {
   Address address;
   address.thoroughfare_number = static_cast<std::int64_t>(
@@ -413,6 +467,8 @@ Address Address::from_json(const JsonValue &value) {
 
 PointOfContact::PointOfContact() = default;
 
+// Converts the pointOfContact metadata structure into a typed representation,
+// pulling nested address information when available.
 PointOfContact PointOfContact::from_json(const JsonValue &value) {
   PointOfContact contact;
   contact.contact_name = value.at("contactName").get<std::string>();
@@ -435,6 +491,8 @@ PointOfContact PointOfContact::from_json(const JsonValue &value) {
   return contact;
 }
 
+// Parses a CRS reference that is supplied as URL. The URL is split into
+// authority/version/code segments that are stored separately.
 ReferenceSystem ReferenceSystem::from_url(const std::string &url) {
   const std::string needle = "/crs/";
   const auto pos = url.find(needle);
@@ -473,6 +531,8 @@ ReferenceSystem ReferenceSystem::from_url(const std::string &url) {
   return ref;
 }
 
+// Handles both URL and structured forms for reference systems, mirroring the
+// flexibility offered by the CityJSON schema.
 ReferenceSystem ReferenceSystem::from_json(const JsonValue &value) {
   if (value.is_string()) {
     return from_url(value.get<std::string>());
@@ -485,6 +545,7 @@ ReferenceSystem ReferenceSystem::from_json(const JsonValue &value) {
   return ref;
 }
 
+// Serialises a ReferenceSystem back to the canonical URL representation.
 JsonValue ReferenceSystem::to_json(const ReferenceSystem &ref) {
   return JsonValue(to_url(ref));
 }
@@ -496,6 +557,8 @@ std::string ReferenceSystem::to_url(const ReferenceSystem &ref) {
 
 Metadata::Metadata() = default;
 
+// Parses the metadata section and normalises structures like geographical
+// extent and contact information.
 Metadata Metadata::from_json(const JsonValue &value) {
   Metadata metadata;
   if (value.contains("geographicalExtent")) {
@@ -528,6 +591,8 @@ Metadata Metadata::from_json(const JsonValue &value) {
 
 GeometryTemplates::GeometryTemplates() = default;
 
+// Extracts geometry templates and their supporting vertices from the raw JSON
+// so they can be reused when slicing features.
 GeometryTemplates GeometryTemplates::from_json(const JsonValue &value) {
   GeometryTemplates templates;
   if (value.contains("templates")) {
@@ -549,16 +614,23 @@ GeometryTemplates GeometryTemplates::from_json(const JsonValue &value) {
 
 CityObject::CityObject() : type(""), other(JsonValue::object()) {}
 
+// Convenience accessor mirroring the Rust implementation.
 std::string CityObject::get_type() const { return type; }
 
+// True when a CityObject has no parents and therefore represents a top-level
+// feature in the dataset.
 bool CityObject::is_toplevel() const { return parents.empty(); }
 
+// Returns the IDs of direct children that should be bundled into the same
+// feature when exporting.
 std::vector<std::string> CityObject::get_children_keys() const {
   return children;
 }
 
 CityJSONFeature::CityJSONFeature() : type_("CityJSONFeature"), id_("") {}
 
+// Parses a CityJSON feature JSON line into the C++ representation. Used both by
+// the CLI (streaming) and tests.
 CityJSONFeature CityJSONFeature::from_json(const JsonValue &value) {
   CityJSONFeature feature;
   if (value.contains("type")) {
@@ -587,10 +659,13 @@ CityJSONFeature CityJSONFeature::from_json(const JsonValue &value) {
   return feature;
 }
 
+// Parses a JSON string and forwards to `from_json`. Kept as convenience mirror
+// of the Rust API.
 CityJSONFeature CityJSONFeature::parse(const std::string &json_text) {
   return from_json(JsonValue::parse(json_text));
 }
 
+// Adds or replaces a CityObject within the feature.
 void CityJSONFeature::add_city_object(const std::string &id,
                                       CityObject object) {
   city_objects_.insert_or_assign(id, std::move(object));
@@ -620,14 +695,18 @@ std::vector<std::vector<int64_t>> &CityJSONFeature::vertices() {
   return vertices_;
 }
 
+// Returns the optional appearance block associated with the feature.
 const std::optional<Appearance> &CityJSONFeature::appearance() const noexcept {
   return appearance_;
 }
 
+// Sets the appearance data. Allows transferring ownership without copying.
 void CityJSONFeature::set_appearance(std::optional<Appearance> appearance) {
   appearance_ = std::move(appearance);
 }
 
+// Computes a centroid in integer coordinate space, primarily used for bounding
+// box and radius filters.
 std::vector<double> CityJSONFeature::centroid() const {
   if (vertices_.empty()) {
     return {0.0, 0.0, 0.0};
@@ -645,11 +724,14 @@ std::vector<double> CityJSONFeature::centroid() const {
   return {totals[0], totals[1], totals[2]};
 }
 
+// Initialises a CityJSON document with defaults that match the standard. These
+// defaults are overwritten when parsing from JSON or building programmatically.
 CityJSON::CityJSON()
     : type_("CityJSON"), version_("2.0"), transform_(), metadata_(std::nullopt),
       appearance_(std::nullopt), geometry_templates_(std::nullopt),
       other_(JsonValue::object()) {}
 
+// Parses a full CityJSON document and stores both standard and unknown fields.
 CityJSON CityJSON::from_json(const JsonValue &value) {
   if (!value.contains("CityObjects")) {
     throw std::runtime_error("CityJSON document missing 'CityObjects'");
@@ -708,9 +790,13 @@ CityJSON CityJSON::from_json(const JsonValue &value) {
   return document;
 }
 
+// Convenience wrapper around `from_json` for string inputs.
 CityJSON CityJSON::parse(const std::string &json_text) {
   return from_json(JsonValue::parse(json_text));
 }
+
+// ----- Accessors
+// ----------------------------------------------------------------
 
 const std::string &CityJSON::type() const noexcept { return type_; }
 
@@ -750,10 +836,13 @@ const std::optional<JsonValue> &CityJSON::extensions() const noexcept {
 
 const JsonValue &CityJSON::other() const noexcept { return other_; }
 
+// Returns the number of top-level CityObjects, i.e., potential features.
 std::size_t CityJSON::number_of_city_objects() const {
   return sorted_ids_.size();
 }
 
+// Recomputes the ordering of features according to the chosen strategy. Only
+// lexicographical ordering is implemented for C++ parity at the moment.
 void CityJSON::sort_cjfeatures(SortingStrategy strategy) {
   populate_sorted_ids();
   switch (strategy) {
@@ -765,6 +854,7 @@ void CityJSON::sort_cjfeatures(SortingStrategy strategy) {
   }
 }
 
+// Fills `sorted_ids_` with the IDs of top-level objects in insertion order.
 void CityJSON::populate_sorted_ids() {
   sorted_ids_.clear();
   sorted_ids_.reserve(city_objects_.size());
@@ -775,6 +865,7 @@ void CityJSON::populate_sorted_ids() {
   }
 }
 
+// Ensures we have computed the sorted IDs before accessing them.
 void CityJSON::ensure_sorted_ids_initialized() {
   if (!sorted_ids_.empty()) {
     return;
@@ -782,11 +873,14 @@ void CityJSON::ensure_sorted_ids_initialized() {
   populate_sorted_ids();
 }
 
+// Appends vertex coordinates to the global vertex list.
 void CityJSON::append_vertices(
     const std::vector<std::vector<int64_t>> &vertices) {
   vertices_.insert(vertices_.end(), vertices.begin(), vertices.end());
 }
 
+// Updates (or initialises) the metadata geographical extent based on supplied
+// bounds typically computed from a feature.
 void CityJSON::refresh_geographical_extent_bounds(
     const std::array<double, 6> &bounds) {
   if (!metadata_) {
@@ -805,6 +899,8 @@ void CityJSON::refresh_geographical_extent_bounds(
   extent[5] = std::max(extent[5], bounds[5]);
 }
 
+// Ensures the global appearance block exists and adds a material, returning the
+// global index so callers can remap references.
 std::size_t CityJSON::add_material(const JsonValue &material) {
   if (!appearance_) {
     appearance_ = Appearance();
@@ -812,6 +908,7 @@ std::size_t CityJSON::add_material(const JsonValue &material) {
   return appearance_->add_material(material);
 }
 
+// Adds a texture entry to the global appearance block.
 std::size_t CityJSON::add_texture(const JsonValue &texture) {
   if (!appearance_) {
     appearance_ = Appearance();
@@ -819,6 +916,8 @@ std::size_t CityJSON::add_texture(const JsonValue &texture) {
   return appearance_->add_texture(texture);
 }
 
+// Appends texture vertices and returns the starting offset for the newly added
+// range so geometry references can be offset accordingly.
 std::size_t CityJSON::add_vertices_texture(
     const std::vector<std::vector<double>> &vertices) {
   if (!appearance_) {
@@ -833,6 +932,8 @@ std::size_t CityJSON::add_vertices_texture(
   return offset;
 }
 
+// Produces a CityJSON document containing only metadata-related sections. This
+// is equivalent to the first line in a CityJSONSeq stream.
 CityJSON CityJSON::get_metadata() const {
   CityJSON metadata_doc;
   metadata_doc.type_ = type_;
@@ -845,6 +946,9 @@ CityJSON CityJSON::get_metadata() const {
   return metadata_doc;
 }
 
+// Extracts the `index`-th top-level feature, remapping vertices, materials, and
+// textures so the resulting feature is self-contained. Returns nullopt when the
+// index is out of bounds.
 std::optional<CityJSONFeature>
 CityJSON::get_cjfeature(std::size_t index) const {
   if (city_objects_.empty()) {
@@ -957,6 +1061,8 @@ CityJSON::get_cjfeature(std::size_t index) const {
   return feature;
 }
 
+// Merges a CityJSON feature back into the document, remapping vertex/material/
+// texture indices and appending geometry and appearance data as required.
 void CityJSON::add_cjfeature(CityJSONFeature &feature) {
   IndexMap material_map;
   IndexMap texture_map;
@@ -1021,6 +1127,9 @@ void CityJSON::add_cjfeature(CityJSONFeature &feature) {
   sorted_ids_.push_back(feature.id());
 }
 
+// Deduplicates identical vertices and remaps all geometry boundaries to point
+// to the compacted vertex list. This is used by the collect command to avoid
+// unnecessary duplication.
 void CityJSON::remove_duplicate_vertices() {
   IndexMap remap;
   std::vector<std::vector<int64_t>> unique_vertices;
@@ -1059,6 +1168,8 @@ void CityJSON::remove_duplicate_vertices() {
   vertices_ = std::move(unique_vertices);
 }
 
+// Recomputes the geographical extent metadata by projecting integer vertices
+// using the current transform.
 void CityJSON::update_geographical_extent() {
   if (!metadata_ || !metadata_->geographical_extent) {
     return;
@@ -1092,6 +1203,8 @@ void CityJSON::update_geographical_extent() {
   extent[5] = maxs[2] * transform_.scale[2] + transform_.translate[2];
 }
 
+// Normalises vertices by shifting them so that the minimum coordinate becomes
+// the new origin while adjusting the translation component of the transform.
 void CityJSON::update_transform() {
   if (vertices_.empty()) {
     return;
@@ -1118,6 +1231,7 @@ void CityJSON::update_transform() {
   transform_.translate[2] += mins[2] * transform_.scale[2];
 }
 
+// Public helper that mirrors the Rust free function for convenience.
 CityJSON parse_cityjson(const std::string &json_text) {
   return CityJSON::parse(json_text);
 }
