@@ -230,6 +230,9 @@ public:
   [[nodiscard]] CityJSON get_metadata() const;
   std::optional<CityJSONFeature> get_cjfeature(std::size_t index) const;
   void add_cjfeature(CityJSONFeature &feature);
+  void remove_duplicate_vertices();
+  void update_geographical_extent();
+  void update_transform();
 
 private:
   std::string type_;
@@ -251,6 +254,7 @@ private:
   std::size_t add_texture(const JsonValue &texture);
   std::size_t
   add_vertices_texture(const std::vector<std::vector<double>> &vertices);
+  void refresh_geographical_extent_bounds(const std::array<double, 6> &bounds);
 };
 
 CityJSON parse_cityjson(const std::string &json_text);

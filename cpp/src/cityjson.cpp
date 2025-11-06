@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -786,6 +787,24 @@ void CityJSON::append_vertices(
   vertices_.insert(vertices_.end(), vertices.begin(), vertices.end());
 }
 
+void CityJSON::refresh_geographical_extent_bounds(
+    const std::array<double, 6> &bounds) {
+  if (!metadata_) {
+    metadata_ = Metadata();
+  }
+  if (!metadata_->geographical_extent) {
+    metadata_->geographical_extent = bounds;
+    return;
+  }
+  auto &extent = metadata_->geographical_extent.value();
+  extent[0] = std::min(extent[0], bounds[0]);
+  extent[1] = std::min(extent[1], bounds[1]);
+  extent[2] = std::min(extent[2], bounds[2]);
+  extent[3] = std::max(extent[3], bounds[3]);
+  extent[4] = std::max(extent[4], bounds[4]);
+  extent[5] = std::max(extent[5], bounds[5]);
+}
+
 std::size_t CityJSON::add_material(const JsonValue &material) {
   if (!appearance_) {
     appearance_ = Appearance();
@@ -1000,6 +1019,103 @@ void CityJSON::add_cjfeature(CityJSONFeature &feature) {
 
   append_vertices(feature.vertices());
   sorted_ids_.push_back(feature.id());
+}
+
+void CityJSON::remove_duplicate_vertices() {
+  IndexMap remap;
+  std::vector<std::vector<int64_t>> unique_vertices;
+  unique_vertices.reserve(vertices_.size());
+
+  std::unordered_map<std::string, std::size_t> seen;
+  seen.reserve(vertices_.size());
+
+  const auto to_key = [](const std::vector<int64_t> &vertex) {
+    return std::to_string(vertex[0]) + ":" + std::to_string(vertex[1]) + ":" +
+           std::to_string(vertex[2]);
+  };
+
+  for (std::size_t i = 0; i < vertices_.size(); ++i) {
+    const auto &vertex = vertices_[i];
+    const std::string key = to_key(vertex);
+    const auto it = seen.find(key);
+    if (it == seen.end()) {
+      const std::size_t new_index = unique_vertices.size();
+      unique_vertices.push_back(vertex);
+      seen.emplace(key, new_index);
+      remap.emplace(i, new_index);
+    } else {
+      remap.emplace(i, it->second);
+    }
+  }
+
+  for (auto &[_, object] : city_objects_) {
+    if (object.geometry) {
+      for (auto &geometry : *object.geometry) {
+        geometry.update_geometry_boundaries(remap);
+      }
+    }
+  }
+
+  vertices_ = std::move(unique_vertices);
+}
+
+void CityJSON::update_geographical_extent() {
+  if (!metadata_ || !metadata_->geographical_extent) {
+    return;
+  }
+  if (vertices_.empty()) {
+    metadata_->geographical_extent =
+        std::array<double, 6>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    return;
+  }
+
+  std::array<int64_t, 3> mins{std::numeric_limits<int64_t>::max(),
+                              std::numeric_limits<int64_t>::max(),
+                              std::numeric_limits<int64_t>::max()};
+  std::array<int64_t, 3> maxs{std::numeric_limits<int64_t>::min(),
+                              std::numeric_limits<int64_t>::min(),
+                              std::numeric_limits<int64_t>::min()};
+
+  for (const auto &vertex : vertices_) {
+    for (std::size_t i = 0; i < 3; ++i) {
+      mins[i] = std::min(mins[i], vertex[i]);
+      maxs[i] = std::max(maxs[i], vertex[i]);
+    }
+  }
+
+  auto &extent = metadata_->geographical_extent.value();
+  extent[0] = mins[0] * transform_.scale[0] + transform_.translate[0];
+  extent[1] = mins[1] * transform_.scale[1] + transform_.translate[1];
+  extent[2] = mins[2] * transform_.scale[2] + transform_.translate[2];
+  extent[3] = maxs[0] * transform_.scale[0] + transform_.translate[0];
+  extent[4] = maxs[1] * transform_.scale[1] + transform_.translate[1];
+  extent[5] = maxs[2] * transform_.scale[2] + transform_.translate[2];
+}
+
+void CityJSON::update_transform() {
+  if (vertices_.empty()) {
+    return;
+  }
+
+  std::array<int64_t, 3> mins{std::numeric_limits<int64_t>::max(),
+                              std::numeric_limits<int64_t>::max(),
+                              std::numeric_limits<int64_t>::max()};
+
+  for (const auto &vertex : vertices_) {
+    for (std::size_t i = 0; i < 3; ++i) {
+      mins[i] = std::min(mins[i], vertex[i]);
+    }
+  }
+
+  for (auto &vertex : vertices_) {
+    vertex[0] -= mins[0];
+    vertex[1] -= mins[1];
+    vertex[2] -= mins[2];
+  }
+
+  transform_.translate[0] += mins[0] * transform_.scale[0];
+  transform_.translate[1] += mins[1] * transform_.scale[1];
+  transform_.translate[2] += mins[2] * transform_.scale[2];
 }
 
 CityJSON parse_cityjson(const std::string &json_text) {
