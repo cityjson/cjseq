@@ -30,7 +30,7 @@ jobs:
 
       - name: Build WASM
         run: |
-          wasm-pack build --target web --scope cityjson
+          wasm-pack build --target web --scope cityjson -- --features wasm
 
       - name: Publish to NPM
         env:

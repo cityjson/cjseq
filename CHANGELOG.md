@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.0-alpha.1] - 2026-07-22
+### Modified
+- wasm-bindgen bindings are now behind an off-by-default `wasm` cargo feature, so library consumers building for wasm32 no longer inherit them; fixes a duplicate-symbol clash for downstream wasm consumers that define their own bindings.
+
 ## [0.4.0] - 2025-09-12
 ### Modified
 - cjseq is now a library + has one binary. Some the functionalities that were in the `main.rs` are now in the `lib.rs` and the binary basically just adds functions to filter and calls the functions of `lib.rs`. This was done also to easily create a Python package.

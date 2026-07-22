@@ -43,9 +43,9 @@ pub use metadata::*;
 pub use semantics::*;
 
 // WASM bindings module
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 pub mod wasm;
 
 // Re-export WASM functions for convenience
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 pub use wasm::*;
