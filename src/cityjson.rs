@@ -558,6 +558,16 @@ pub enum CityJSONVersion {
     V2_0,
 }
 
+impl std::fmt::Display for CityJSONVersion {
+    /// The version as the `version` member spells it, eg `2.0`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            CityJSONVersion::V1_1 => "1.1",
+            CityJSONVersion::V2_0 => "2.0",
+        })
+    }
+}
+
 /// One entry of the `extensions` member (§ 8): where the Extension's schema
 /// lives and which version of it the document uses.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

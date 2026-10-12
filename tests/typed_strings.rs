@@ -155,3 +155,13 @@ fn a_texture_ring_is_untextured_or_a_texture_with_uvs() {
         );
     }
 }
+
+#[test]
+fn a_version_displays_as_it_is_spelled_in_json() {
+    assert_eq!(CityJSONVersion::V1_1.to_string(), "1.1");
+    assert_eq!(CityJSONVersion::V2_0.to_string(), "2.0");
+    assert_eq!(
+        serde_json::to_value(CityJSONVersion::V2_0).unwrap(),
+        json!(CityJSONVersion::V2_0.to_string())
+    );
+}
