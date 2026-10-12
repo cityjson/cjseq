@@ -3,7 +3,7 @@
 //! Object hierarchy agrees with itself.
 
 use crate::appearance::{Appearance, MaterialReference, TextureReference, TexturedRing};
-use crate::city_object::CityObject;
+use crate::city_object::{CityObject, CityObjectType};
 use crate::cityjson::{CityJSON, CityJSONFeature};
 use crate::error::{CjseqError, Result};
 use crate::geometry::{Geometry, Shell, Surface, Themes};
@@ -11,7 +11,7 @@ use crate::index::{
     Index, Indices, MaterialIndex, MultiSolidValues, PrimitiveValues, SolidValues, SurfaceIndex,
     TextureIndex, UvIndex,
 };
-use crate::semantics::Semantics;
+use crate::semantics::{SemanticSurfaceType, Semantics};
 use indexmap::IndexMap;
 
 /// The lengths that the indices of one geometry are checked against.
@@ -183,7 +183,63 @@ fn texture<V, B: ?Sized>(
     }
 }
 
+/// `\w` in the schemas' patterns.
+fn word(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+/// `(\+)([A-Z])\w+`, the schema's pattern for an Extension City Object type.
+fn city_object_type(t: &CityObjectType, errs: &mut Vec<CjseqError>) {
+    let CityObjectType::Extension(s) = t else {
+        return;
+    };
+    let mut c = s.chars();
+    let ok = c.next() == Some('+')
+        && c.next().is_some_and(|c| c.is_ascii_uppercase())
+        && c.next().is_some_and(word);
+    if !ok {
+        errs.push(CjseqError::Pattern {
+            what: "Extension City Object type",
+            value: s.clone(),
+            expected: "'+', a capital letter, then letters, digits or '_'",
+        });
+    }
+}
+
+/// `(\+)\w+`, the schema's pattern for an Extension semantic surface type.
+fn semantic_surface_type(t: &SemanticSurfaceType, errs: &mut Vec<CjseqError>) {
+    let SemanticSurfaceType::Extension(s) = t else {
+        return;
+    };
+    let mut c = s.chars();
+    if !(c.next() == Some('+') && c.next().is_some_and(word)) {
+        errs.push(CjseqError::Pattern {
+            what: "Extension semantic surface type",
+            value: s.clone(),
+            expected: "'+' then letters, digits or '_'",
+        });
+    }
+}
+
+/// `^(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$`, an Extension's version.
+fn extension_version(v: &str, errs: &mut Vec<CjseqError>) {
+    let number = |p: &str| {
+        !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) && (p == "0" || !p.starts_with('0'))
+    };
+    let parts: Vec<&str> = v.split('.').collect();
+    if !((2..=3).contains(&parts.len()) && parts.iter().all(|p| number(p))) {
+        errs.push(CjseqError::Pattern {
+            what: "Extension version",
+            value: v.to_string(),
+            expected: "X.Y or X.Y.Z",
+        });
+    }
+}
+
 fn geometry(g: &Geometry, l: &Lengths, errs: &mut Vec<CjseqError>) {
+    for s in g.surfaces().into_iter().flatten() {
+        semantic_surface_type(&s.thetype, errs);
+    }
     g.visit_vertices(&mut |v| in_range(v, l.vertices, errs));
     match g {
         Geometry::MultiPoint {
@@ -263,11 +319,14 @@ fn hierarchy(cos: &IndexMap<String, CityObject>, errs: &mut Vec<CjseqError>) {
                     from: id.clone(),
                     to: child.clone(),
                 }),
-                Some(c) if !names(&c.parents, id) => errs.push(CjseqError::HierarchyMismatch {
-                    parent: id.clone(),
-                    child: child.clone(),
-                }),
-                _ => {}
+                Some(c) => {
+                    if !names(&c.parents, id) {
+                        errs.push(CjseqError::HierarchyMismatch {
+                            parent: id.clone(),
+                            child: child.clone(),
+                        });
+                    }
+                }
             }
         }
         for parent in co.parents.iter().flatten() {
@@ -276,11 +335,14 @@ fn hierarchy(cos: &IndexMap<String, CityObject>, errs: &mut Vec<CjseqError>) {
                     from: id.clone(),
                     to: parent.clone(),
                 }),
-                Some(p) if !names(&p.children, id) => errs.push(CjseqError::HierarchyMismatch {
-                    parent: parent.clone(),
-                    child: id.clone(),
-                }),
-                _ => {}
+                Some(p) => {
+                    if !names(&p.children, id) {
+                        errs.push(CjseqError::HierarchyMismatch {
+                            parent: parent.clone(),
+                            child: id.clone(),
+                        });
+                    }
+                }
             }
         }
     }
@@ -290,6 +352,7 @@ fn city_objects(cos: &IndexMap<String, CityObject>, l: &Lengths, errs: &mut Vec<
     hierarchy(cos, errs);
     for (id, co) in cos {
         let mut inner = Vec::new();
+        city_object_type(&co.thetype, &mut inner);
         for g in co.geometry.iter().flatten() {
             geometry(g, l, &mut inner);
         }
@@ -323,6 +386,9 @@ impl CityJSON {
     /// valid.
     pub fn errors(&self) -> Vec<CjseqError> {
         let mut errs = Vec::new();
+        for e in self.extensions.iter().flat_map(|e| e.values()) {
+            extension_version(&e.version, &mut errs);
+        }
         let app = self.appearance.as_ref();
         if let Some(gt) = &self.geometry_templates {
             let l = Lengths::new(gt.vertices_templates.len(), None, app);

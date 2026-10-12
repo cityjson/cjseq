@@ -40,6 +40,14 @@ pub enum CjseqError {
         expected: usize,
         found: usize,
     },
+    /// A name or version does not match the pattern the schema gives it.
+    Pattern {
+        /// What the value is, eg `"Extension City Object type"`.
+        what: &'static str,
+        value: String,
+        /// The pattern, in words.
+        expected: &'static str,
+    },
     /// A CityJSONFeature carries a root member only a CityJSON document may
     /// carry, eg `transform`.
     MisplacedMember { member: String },
@@ -102,6 +110,11 @@ impl fmt::Display for CjseqError {
                 expected,
                 found,
             } => write!(f, "{found} {what} where the boundaries call for {expected}"),
+            CjseqError::Pattern {
+                what,
+                value,
+                expected,
+            } => write!(f, "{what} {value:?} is not {expected}"),
             CjseqError::MisplacedMember { member } => write!(
                 f,
                 "a CityJSONFeature cannot carry {member:?}; only the CityJSON document can"
@@ -132,6 +145,7 @@ impl std::error::Error for CjseqError {
             | CjseqError::HierarchyMismatch { .. }
             | CjseqError::ValueCount { .. }
             | CjseqError::MisplacedMember { .. }
+            | CjseqError::Pattern { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
     }

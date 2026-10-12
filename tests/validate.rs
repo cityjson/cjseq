@@ -467,3 +467,51 @@ fn the_header_renumbers_its_templates_to_the_sliced_appearance() {
         json!(0)
     );
 }
+
+/// The schemas' name patterns: an Extension City Object type is `+` then a
+/// capital letter then word characters, an Extension semantic surface type
+/// `+` then word characters, and an Extension's version `X.Y` (or `X.Y.Z`).
+#[test]
+fn extension_names_and_versions_follow_the_schema_patterns() {
+    let co = |t: &str| doc(json!({"x": {"type": t}}), json!([]), json!({}));
+    co("+NoiseBuilding").validate().unwrap();
+    for bad in ["+noiseBuilding", "+N", "+1Building"] {
+        let e = inner(first_error(&co(bad)), "x");
+        assert!(
+            matches!(e, CjseqError::Pattern { ref value, .. } if value == bad),
+            "{bad}: {e:?}"
+        );
+    }
+
+    let sem = |t: &str| {
+        building(
+            json!({"type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 2]]],
+            "semantics": {"surfaces": [{"type": t}], "values": [0]}}),
+        )
+    };
+    doc(sem("+thermal_surface"), json!(V4), json!({}))
+        .validate()
+        .unwrap();
+    let e = inner(first_error(&doc(sem("+-x"), json!(V4), json!({}))), "b");
+    assert!(
+        matches!(e, CjseqError::Pattern { ref value, .. } if value == "+-x"),
+        "{e:?}"
+    );
+
+    let ext = |v: &str| {
+        doc(
+            json!({}),
+            json!([]),
+            json!({"extensions": {"Noise": {"url": "https://x.org/n.json", "version": v}}}),
+        )
+    };
+    ext("2.0").validate().unwrap();
+    ext("0.10.1").validate().unwrap();
+    for bad in ["2", "v2.0", "2.0.", "02.0", "2.x"] {
+        let e = first_error(&ext(bad));
+        assert!(
+            matches!(e, CjseqError::Pattern { ref value, .. } if value == bad),
+            "{bad}: {e:?}"
+        );
+    }
+}
