@@ -19,10 +19,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install wasm-pack
         run: |
@@ -30,7 +27,7 @@ jobs:
 
       - name: Build WASM
         run: |
-          wasm-pack build --target web --no-pack
+          wasm-pack build --target web --scope cityjson -- --no-default-features --features wasm
 
       - name: Publish to NPM
         env:

@@ -23,10 +23,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-workspaces
         run: cargo install cargo-workspaces
@@ -38,7 +35,6 @@ jobs:
 
       - name: Bump version
         run: |
-          cd src/rust
           cargo workspaces version ${{ github.event.inputs.version_bump }} --no-git-commit --yes
 
       - name: Commit version bump

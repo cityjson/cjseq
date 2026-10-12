@@ -1,33 +1,21 @@
-use crate::cjseq::{CityJSON, CityJSONFeature};
-use cjseq;
-use std::path::PathBuf;
-
-use std::fs::File;
-use std::io::BufRead;
-use std::io::BufReader;
+use cjseq::{CityJSON, CityJSONFeature, Collector, SortingStrategy};
+use std::str::FromStr;
 
 #[test]
 fn test1() {
-    let mut cjj = CityJSON::new();
-    let path = PathBuf::from("data/3dbag_b2.city.jsonl");
-    let f = File::open(path.canonicalize().unwrap()).unwrap();
-    let br = BufReader::new(f);
-    for (i, line) in br.lines().enumerate() {
-        match &line {
-            Ok(l) => {
-                if i == 0 {
-                    cjj = CityJSON::from_str(&l).unwrap();
-                    assert!(cjj.number_of_city_objects() == 0);
-                    assert!(cjj.get_cjfeature(0).is_none());
-                    assert_eq!(cjj.vertices.is_empty(), true);
-                } else {
-                    let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l).unwrap();
-                    cjj.add_cjfeature(&mut cjf);
-                    assert_eq!(cjj.number_of_city_objects(), i);
-                }
-            }
-            Err(error) => eprintln!("Error reading line: {}", error),
-        }
+    let text = std::fs::read_to_string("data/3dbag_b2.city.jsonl").unwrap();
+    let mut lines = text.lines();
+    let header = CityJSON::from_str(lines.next().unwrap()).unwrap();
+    assert_eq!(header.number_of_city_objects(), 0);
+    assert_eq!(header.features(SortingStrategy::AsIs).count(), 0);
+    assert!(header.vertices.is_empty());
+    let mut c = Collector::new(header);
+    let mut n = 0;
+    for l in lines {
+        c.add(CityJSONFeature::from_str(l).unwrap()).unwrap();
+        n += 1;
     }
-    assert_eq!(cjj.number_of_city_objects(), 2);
+    let cj = c.finish();
+    assert_eq!(n, 2);
+    assert_eq!(cj.number_of_city_objects(), 2);
 }
