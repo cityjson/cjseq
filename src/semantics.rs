@@ -1,3 +1,4 @@
+use crate::index::SurfaceIndex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -155,9 +156,9 @@ pub struct SemanticsSurface {
     #[serde(rename = "type")]
     pub thetype: SemanticSurfaceType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent: Option<usize>,
+    pub parent: Option<SurfaceIndex>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub children: Option<Vec<usize>>,
+    pub children: Option<Vec<SurfaceIndex>>,
     /// CityJSON lets a semantic surface carry arbitrary extra members
     /// (`slope`, `direction`, ...); they are kept verbatim so that a file
     /// round-trips without losing them.
@@ -169,7 +170,7 @@ pub struct SemanticsSurface {
 /// whole shell with no semantics — is `null` in JSON, which
 /// `geomprimitives.schema.json` permits at every level of `semantics.values`
 /// (`"type": ["array", "null"]`), exactly as it does for `material.values`.
-pub type SemanticsShell = Vec<Option<usize>>;
+pub type SemanticsShell = Vec<Option<SurfaceIndex>>;
 /// One solid's worth of semantic-surface indices, per surface, per shell.
 pub type SemanticsSolid = Vec<Option<SemanticsShell>>;
 
@@ -188,7 +189,7 @@ pub type SemanticsSolid = Vec<Option<SemanticsShell>>;
 #[serde(untagged)]
 pub enum SemanticsValues {
     /// `MultiSurface`, `CompositeSurface`: one index per surface.
-    Surfaces(Vec<Option<usize>>),
+    Surfaces(Vec<Option<SurfaceIndex>>),
     /// `Solid`: one index per surface, per shell.
     Shells(Vec<Option<SemanticsShell>>),
     /// `MultiSolid`, `CompositeSolid`: one index per surface, per shell, per
@@ -303,8 +304,8 @@ mod tests {
             "values": [0, 1]
         });
         let s: Semantics = serde_json::from_value(input.clone()).unwrap();
-        assert_eq!(s.surfaces[0].children, Some(vec![1]));
-        assert_eq!(s.surfaces[1].parent, Some(0));
+        assert_eq!(s.surfaces[0].children, Some(vec![SurfaceIndex(1)]));
+        assert_eq!(s.surfaces[1].parent, Some(SurfaceIndex(0)));
         assert_eq!(
             s.surfaces[1].other["direction"],
             serde_json::json!("north"),

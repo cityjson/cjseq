@@ -21,6 +21,7 @@ mod city_object;
 mod cityjson;
 pub mod error;
 mod geometry;
+mod index;
 mod metadata;
 mod semantics;
 
@@ -34,6 +35,9 @@ pub use cityjson::*;
 //-- name; the alias stays reachable as `cjseq::error::Result`.
 pub use error::{CjseqError, IndexKind};
 pub use geometry::*;
+pub use index::{
+    Index, MaterialIndex, SurfaceIndex, TemplateIndex, TextureIndex, UvIndex, VertexIndex,
+};
 pub use metadata::*;
 pub use semantics::*;
 

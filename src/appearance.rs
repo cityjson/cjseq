@@ -1,3 +1,4 @@
+use crate::index::{MaterialIndex, TextureIndex, UvIndex};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -5,7 +6,7 @@ use serde_json::{Map, Value};
 /// shell with no material — is `null` in JSON, which
 /// `geomprimitives.schema.json` permits at every level of `material.values`
 /// (`"type": ["array", "null"]`).
-pub type MaterialShell = Vec<Option<usize>>;
+pub type MaterialShell = Vec<Option<MaterialIndex>>;
 /// One solid's worth of material indices, one per surface, per shell.
 pub type MaterialSolid = Vec<Option<MaterialShell>>;
 
@@ -26,7 +27,7 @@ pub type MaterialSolid = Vec<Option<MaterialShell>>;
 #[serde(untagged)]
 pub enum MaterialValues {
     /// `MultiSurface`, `CompositeSurface`: one index per surface.
-    Surfaces(Vec<Option<usize>>),
+    Surfaces(Vec<Option<MaterialIndex>>),
     /// `Solid`: one index per surface, per shell.
     Shells(Vec<Option<MaterialShell>>),
     /// `MultiSolid`, `CompositeSolid`: one index per surface, per shell, per
@@ -38,7 +39,7 @@ impl MaterialValues {
     /// Every material index, in document order, whatever the depth. The depth
     /// is known from the variant, so no runtime inspection is needed; the
     /// `flatten()`s skip `None` sub-arrays as well as `null` leaves.
-    pub(crate) fn indices_mut(&mut self) -> Box<dyn Iterator<Item = &mut usize> + '_> {
+    pub(crate) fn indices_mut(&mut self) -> Box<dyn Iterator<Item = &mut MaterialIndex> + '_> {
         match self {
             MaterialValues::Surfaces(v) => Box::new(v.iter_mut().flatten()),
             MaterialValues::Shells(v) => Box::new(v.iter_mut().flatten().flatten().flatten()),
@@ -63,7 +64,10 @@ pub enum TexturedRing {
     /// `[null]`
     Untextured,
     /// `[texture, uvs...]`
-    Textured { texture: usize, uvs: Vec<usize> },
+    Textured {
+        texture: TextureIndex,
+        uvs: Vec<UvIndex>,
+    },
 }
 
 impl TryFrom<Vec<Option<usize>>> for TexturedRing {
@@ -72,11 +76,11 @@ impl TryFrom<Vec<Option<usize>>> for TexturedRing {
         match v.split_first() {
             Some((None, [])) => Ok(TexturedRing::Untextured),
             Some((Some(texture), rest)) if !rest.is_empty() => Ok(TexturedRing::Textured {
-                texture: *texture,
+                texture: TextureIndex(*texture),
                 uvs: rest
                     .iter()
                     .map(|uv| {
-                        uv.ok_or_else(|| {
+                        uv.map(UvIndex).ok_or_else(|| {
                             crate::error::CjseqError::Validation(
                                 "a textured ring has a null texture-vertex index".to_string(),
                             )
@@ -95,8 +99,8 @@ impl From<TexturedRing> for Vec<Option<usize>> {
     fn from(r: TexturedRing) -> Self {
         match r {
             TexturedRing::Untextured => vec![None],
-            TexturedRing::Textured { texture, uvs } => std::iter::once(Some(texture))
-                .chain(uvs.into_iter().map(Some))
+            TexturedRing::Textured { texture, uvs } => std::iter::once(Some(texture.0))
+                .chain(uvs.into_iter().map(|uv| Some(uv.0)))
                 .collect(),
         }
     }
@@ -183,7 +187,7 @@ pub struct MaterialReference {
     )]
     pub values: Option<Option<MaterialValues>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<usize>,
+    pub value: Option<MaterialIndex>,
     /// The per-theme material object names `value` and `values` and declares
     /// no `additionalProperties: false`, so anything further is legal
     /// CityJSON and is kept rather than dropped.
@@ -458,7 +462,7 @@ mod tests {
     fn a_material_or_texture_theme_keeps_members_the_schema_does_not_name() {
         let m: MaterialReference =
             serde_json::from_value(serde_json::json!({"value": 0, "vendorData": true})).unwrap();
-        assert_eq!(m.value, Some(0));
+        assert_eq!(m.value, Some(MaterialIndex(0)));
         assert_eq!(
             serde_json::to_value(&m).unwrap(),
             serde_json::json!({"value": 0, "vendorData": true})
@@ -533,7 +537,7 @@ mod tests {
     #[test]
     fn material_value_is_a_bare_integer() {
         let m: MaterialReference = serde_json::from_value(serde_json::json!({"value": 3})).unwrap();
-        assert_eq!(m.value, Some(3));
+        assert_eq!(m.value, Some(MaterialIndex(3)));
         assert_eq!(
             serde_json::to_value(&m).unwrap(),
             serde_json::json!({"value": 3})
@@ -739,7 +743,10 @@ mod tests {
             serde_json::from_value(serde_json::json!({"values": [0, 1]})).unwrap();
         assert_eq!(
             array.values,
-            Some(Some(MaterialValues::Surfaces(vec![Some(0), Some(1)])))
+            Some(Some(MaterialValues::Surfaces(vec![
+                Some(MaterialIndex(0)),
+                Some(MaterialIndex(1))
+            ])))
         );
         assert_eq!(
             serde_json::to_value(&array).unwrap(),

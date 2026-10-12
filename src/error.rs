@@ -52,6 +52,8 @@ pub enum IndexKind {
     TextureVertex,
     Material,
     Texture,
+    Surface,
+    Template,
 }
 
 impl fmt::Display for CjseqError {

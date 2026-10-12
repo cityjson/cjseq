@@ -1,7 +1,8 @@
 use crate::appearance::{Appearance, MaterialObject, TextureObject};
 use crate::city_object::CityObject;
-use crate::error::{CjseqError, IndexKind, Result};
+use crate::error::{CjseqError, Result};
 use crate::geometry::GeometryTemplates;
+use crate::index::{Index, MaterialIndex, TextureIndex, UvIndex, VertexIndex};
 use crate::metadata::{Metadata, Transform};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -20,14 +21,14 @@ pub type Vertex = [i64; 3];
 /// new palette; `update_material`/`update_texture` build it by handing out
 /// consecutive new indices, so its values are exactly `0..oldnew.len()` and
 /// sorting by them reproduces the palette.
-fn reindex<T: Clone>(all: &[T], oldnew: &HashMap<usize, usize>, kind: IndexKind) -> Result<Vec<T>> {
-    let mut pairs: Vec<(usize, usize)> = oldnew.iter().map(|(o, n)| (*n, *o)).collect();
+fn reindex<T: Clone, I: Index>(all: &[T], oldnew: &HashMap<I, I>) -> Result<Vec<T>> {
+    let mut pairs: Vec<(usize, usize)> = oldnew.iter().map(|(o, n)| (n.get(), o.get())).collect();
     pairs.sort_unstable();
     pairs
         .into_iter()
         .map(|(_, old)| {
             all.get(old).cloned().ok_or(CjseqError::IndexOutOfRange {
-                kind,
+                kind: I::KIND,
                 index: old,
                 len: all.len(),
             })
@@ -39,21 +40,21 @@ fn reindex<T: Clone>(all: &[T], oldnew: &HashMap<usize, usize>, kind: IndexKind)
 /// `t_v_oldnew` refer to, with the default themes carried over.
 fn slice_appearance(
     all: &Appearance,
-    m_oldnew: &HashMap<usize, usize>,
-    t_oldnew: &HashMap<usize, usize>,
-    t_v_oldnew: &HashMap<usize, usize>,
+    m_oldnew: &HashMap<MaterialIndex, MaterialIndex>,
+    t_oldnew: &HashMap<TextureIndex, TextureIndex>,
+    t_v_oldnew: &HashMap<UvIndex, UvIndex>,
 ) -> Result<Appearance> {
     let mut a = Appearance::new();
     a.default_theme_material = all.default_theme_material.clone();
     a.default_theme_texture = all.default_theme_texture.clone();
     if let Some(m) = &all.materials {
-        a.materials = Some(reindex(m, m_oldnew, IndexKind::Material)?);
+        a.materials = Some(reindex(m, m_oldnew)?);
     }
     if let Some(t) = &all.textures {
-        a.textures = Some(reindex(t, t_oldnew, IndexKind::Texture)?);
+        a.textures = Some(reindex(t, t_oldnew)?);
     }
     if let Some(tv) = &all.vertices_texture {
-        a.vertices_texture = Some(reindex(tv, t_v_oldnew, IndexKind::TextureVertex)?);
+        a.vertices_texture = Some(reindex(tv, t_v_oldnew)?);
     }
     Ok(a)
 }
@@ -168,9 +169,9 @@ impl CityJSON {
         //-- added to 1st line (metadata)
         if let Some(x) = &self.geometry_templates {
             let mut gts2: GeometryTemplates = x.clone();
-            let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-            let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
+            let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
+            let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
             for g in &mut gts2.templates {
                 g.update_material(&mut m_oldnew);
                 g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
@@ -220,10 +221,10 @@ impl CityJSON {
 
         let mut cjf = CityJSONFeature::new();
         cjf.id = id.clone();
-        let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
-        let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-        let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-        let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut g_vi_oldnew: HashMap<VertexIndex, VertexIndex> = HashMap::new();
+        let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
+        let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
+        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
         for (key, co) in members {
             let mut co2 = co.clone();
             for g in co2.geometry.iter_mut().flatten() {
@@ -233,7 +234,7 @@ impl CityJSON {
             }
             cjf.add_co(key.clone(), co2);
         }
-        cjf.vertices = reindex(&self.vertices, &g_vi_oldnew, IndexKind::Vertex)?;
+        cjf.vertices = reindex(&self.vertices, &g_vi_oldnew)?;
         if let Some(a) = &self.appearance {
             cjf.appearance = Some(slice_appearance(a, &m_oldnew, &t_oldnew, &t_v_oldnew)?);
         }
@@ -245,19 +246,22 @@ impl CityJSON {
         self.transform_correction = Some(t);
     }
     pub fn add_cjfeature(&mut self, cjf: &mut CityJSONFeature) {
-        let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-        let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-        let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
+        let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
+        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
         let g_offset = self.vertices.len();
         if let Some(cjf_app) = &cjf.appearance {
             if let Some(cjf_mat) = &cjf_app.materials {
                 for (i, m) in cjf_mat.iter().enumerate() {
-                    m_oldnew.insert(i, self.add_material(m.clone()));
+                    m_oldnew.insert(
+                        MaterialIndex(i),
+                        MaterialIndex(self.add_material(m.clone())),
+                    );
                 }
             }
             if let Some(cjf_tex) = &cjf_app.textures {
                 for (i, m) in cjf_tex.iter().enumerate() {
-                    t_oldnew.insert(i, self.add_texture(m.clone()));
+                    t_oldnew.insert(TextureIndex(i), TextureIndex(self.add_texture(m.clone())));
                 }
             }
             if let Some(cjf_v_tex) = &cjf_app.vertices_texture {
@@ -270,7 +274,7 @@ impl CityJSON {
                     .and_then(|a| a.vertices_texture.as_ref())
                     .map_or(0, Vec::len);
                 for i in 0..cjf_v_tex.len() {
-                    t_v_oldnew.insert(i, t_v_offset + i);
+                    t_v_oldnew.insert(UvIndex(i), UvIndex(t_v_offset + i));
                 }
                 self.add_vertices_texture(cjf_v_tex.clone());
             }
@@ -289,14 +293,14 @@ impl CityJSON {
     }
     pub fn remove_duplicate_vertices(&mut self) {
         let mut h: HashMap<Vertex, usize> = HashMap::new();
-        let mut newids: HashMap<usize, usize> = HashMap::new();
+        let mut newids: HashMap<VertexIndex, VertexIndex> = HashMap::new();
         let mut newvertices: Vec<Vertex> = Vec::new();
         for (i, v) in self.vertices.iter().enumerate() {
             let new = *h.entry(*v).or_insert_with(|| {
                 newvertices.push(*v);
                 newvertices.len() - 1
             });
-            newids.insert(i, new);
+            newids.insert(VertexIndex(i), VertexIndex(new));
         }
         for co in self.city_objects.values_mut() {
             for g in co.geometry.iter_mut().flatten() {

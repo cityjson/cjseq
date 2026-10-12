@@ -1,5 +1,6 @@
 use crate::appearance::{MaterialReference, TextureReference, TexturedRing};
 use crate::error::{CjseqError, Result};
+use crate::index::{remap, MaterialIndex, TemplateIndex, TextureIndex, UvIndex, VertexIndex};
 use crate::semantics::Semantics;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// A closed sequence of vertex indices bounding a face.
-pub type Ring = Vec<usize>;
+pub type Ring = Vec<VertexIndex>;
 /// A face: the exterior ring first, then any interior rings.
 pub type Surface = Vec<Ring>;
 /// A closed collection of surfaces bounding a volume.
@@ -202,8 +203,8 @@ pub enum Geometry {
     },
     GeometryInstance {
         /// The one vertex the template is placed at.
-        boundaries: [usize; 1],
-        template: usize,
+        boundaries: [VertexIndex; 1],
+        template: TemplateIndex,
         #[serde(rename = "transformationMatrix")]
         transformation_matrix: [f64; 16],
     },
@@ -336,7 +337,7 @@ impl Geometry {
     /// Every vertex index in `boundaries`, in document order, whatever the
     /// nesting depth of this variant. The depth is known statically per
     /// variant, so no runtime inspection of the boundaries is needed.
-    fn boundary_indices_mut(&mut self) -> Box<dyn Iterator<Item = &mut usize> + '_> {
+    fn boundary_indices_mut(&mut self) -> Box<dyn Iterator<Item = &mut VertexIndex> + '_> {
         match self {
             Geometry::MultiPoint { boundaries, .. } => Box::new(boundaries.iter_mut()),
             Geometry::GeometryInstance { boundaries, .. } => Box::new(boundaries.iter_mut()),
@@ -362,31 +363,32 @@ impl Geometry {
         }
     }
 
-    pub(crate) fn update_geometry_boundaries(&mut self, violdnew: &mut HashMap<usize, usize>) {
+    pub(crate) fn update_geometry_boundaries(
+        &mut self,
+        violdnew: &mut HashMap<VertexIndex, VertexIndex>,
+    ) {
         for vi in self.boundary_indices_mut() {
-            let next = violdnew.len();
-            *vi = *violdnew.entry(*vi).or_insert(next);
+            *vi = remap(violdnew, *vi);
         }
     }
 
     pub(crate) fn offset_geometry_boundaries(&mut self, offset: usize) {
         for vi in self.boundary_indices_mut() {
-            *vi += offset;
+            vi.0 += offset;
         }
     }
 
     /// Renumber every material index against `m_oldnew`, first-encounter
     /// order. The depth of `values` comes from its variant, so the geometry
     /// type is never consulted.
-    pub(crate) fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
+    pub(crate) fn update_material(&mut self, m_oldnew: &mut HashMap<MaterialIndex, MaterialIndex>) {
         let Some(materials) = self.material_mut() else {
             return;
         };
         for mat in materials.values_mut() {
             //-- material.value colours the whole object
             if let Some(thevalue) = mat.value {
-                let l = m_oldnew.len();
-                mat.value = Some(*m_oldnew.entry(thevalue).or_insert(l));
+                mat.value = Some(remap(m_oldnew, thevalue));
                 continue;
             }
             //-- else it's material.values, one index per surface. The outer
@@ -396,8 +398,7 @@ impl Geometry {
                 continue;
             };
             for x in values.indices_mut() {
-                let l = m_oldnew.len();
-                *x = *m_oldnew.entry(*x).or_insert(l);
+                *x = remap(m_oldnew, *x);
             }
         }
     }
@@ -409,22 +410,11 @@ impl Geometry {
     /// does) fills the map first.
     pub(crate) fn update_texture(
         &mut self,
-        t_oldnew: &mut HashMap<usize, usize>,
-        t_v_oldnew: &mut HashMap<usize, usize>,
+        t_oldnew: &mut HashMap<TextureIndex, TextureIndex>,
+        t_v_oldnew: &mut HashMap<UvIndex, UvIndex>,
     ) {
         let Some(textures) = self.texture_mut() else {
             return;
-        };
-        //-- the first index of the innermost array is a texture, the rest are
-        //-- texture vertices; they are renumbered against different maps.
-        let mut remap = |is_texture: bool, thevalue: usize| -> usize {
-            let map = if is_texture {
-                &mut *t_oldnew
-            } else {
-                &mut *t_v_oldnew
-            };
-            let l = map.len();
-            *map.entry(thevalue).or_insert(l)
         };
         for tex in textures.values_mut() {
             //-- a theme may legally carry no `values` at all
@@ -433,9 +423,9 @@ impl Geometry {
             };
             for ring in values.rings_mut() {
                 if let TexturedRing::Textured { texture, uvs } = ring {
-                    *texture = remap(true, *texture);
+                    *texture = remap(t_oldnew, *texture);
                     for uv in uvs {
-                        *uv = remap(false, *uv);
+                        *uv = remap(t_v_oldnew, *uv);
                     }
                 }
             }
@@ -558,7 +548,7 @@ mod tests {
             "boundaries": [[[7, 9, 7]], [[9, 4, 4]]]
         }))
         .unwrap();
-        let mut map: HashMap<usize, usize> = HashMap::new();
+        let mut map: HashMap<VertexIndex, VertexIndex> = HashMap::new();
         g.update_geometry_boundaries(&mut map);
         assert_eq!(
             serde_json::to_value(&g).unwrap()["boundaries"],
@@ -577,13 +567,13 @@ mod tests {
             "boundaries": [[[[[7, 9, 7]]]], [[[[9, 4, 4]]]]]
         }))
         .unwrap();
-        let mut map: HashMap<usize, usize> = HashMap::new();
+        let mut map: HashMap<VertexIndex, VertexIndex> = HashMap::new();
         g.update_geometry_boundaries(&mut map);
         assert_eq!(
             serde_json::to_value(&g).unwrap()["boundaries"],
             serde_json::json!([[[[[0, 1, 0]]]], [[[[1, 2, 2]]]]])
         );
-        let mut entries: Vec<(usize, usize)> = map.into_iter().collect();
+        let mut entries: Vec<(usize, usize)> = map.into_iter().map(|(a, b)| (a.0, b.0)).collect();
         entries.sort();
         assert_eq!(entries, vec![(4, 2), (7, 0), (9, 1)]);
     }
@@ -604,8 +594,8 @@ mod tests {
             ]}}
         }))
         .unwrap();
-        let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-        let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
+        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
         g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
 
         let values = serde_json::to_value(&g.texture().unwrap()["winter"].values).unwrap();
@@ -613,10 +603,10 @@ mod tests {
             values,
             serde_json::json!([[[0, 0, 1, 2, 0]], [[0, 2, 1, 3, 2]], [[null]]])
         );
-        let mut tv: Vec<(usize, usize)> = t_v_oldnew.into_iter().collect();
+        let mut tv: Vec<(usize, usize)> = t_v_oldnew.into_iter().map(|(a, b)| (a.0, b.0)).collect();
         tv.sort();
         assert_eq!(tv, vec![(20, 0), (21, 1), (22, 2), (30, 3)]);
-        let t: Vec<(usize, usize)> = t_oldnew.into_iter().collect();
+        let t: Vec<(usize, usize)> = t_oldnew.into_iter().map(|(a, b)| (a.0, b.0)).collect();
         assert_eq!(t, vec![(5, 0)]);
     }
 
@@ -631,8 +621,9 @@ mod tests {
             "texture": {"t": {"values": [[[0, 2, 0, 1]]]}}
         }))
         .unwrap();
-        let mut t_oldnew: HashMap<usize, usize> = HashMap::from([(0, 3)]);
-        let mut t_v_oldnew: HashMap<usize, usize> = (0..3).map(|i| (i, 10 + i)).collect();
+        let mut t_oldnew = HashMap::from([(TextureIndex(0), TextureIndex(3))]);
+        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> =
+            (0..3).map(|i| (UvIndex(i), UvIndex(10 + i))).collect();
         g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
         assert_eq!(
             serde_json::to_value(&g).unwrap()["texture"]["t"]["values"],
@@ -652,7 +643,7 @@ mod tests {
             "material": {"irradiation": {"values": [[0, null, 2], [2, null, 0]]}}
         }))
         .unwrap();
-        let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+        let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
         g.update_material(&mut m_oldnew);
 
         //-- as above: typed `values`, oracle expectations unchanged.
@@ -669,7 +660,7 @@ mod tests {
             "null holes must survive and indices must compact in first-encounter order"
         );
 
-        let mut m: Vec<(usize, usize)> = m_oldnew.into_iter().collect();
+        let mut m: Vec<(usize, usize)> = m_oldnew.into_iter().map(|(a, b)| (a.0, b.0)).collect();
         m.sort();
         assert_eq!(m, vec![(0, 0), (2, 1)]);
     }

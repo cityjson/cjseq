@@ -137,8 +137,8 @@ fn a_texture_ring_is_untextured_or_a_texture_with_uvs() {
     assert_eq!(
         ring,
         TexturedRing::Textured {
-            texture: 0,
-            uvs: vec![10, 11, 12]
+            texture: cjseq::TextureIndex(0),
+            uvs: vec![cjseq::UvIndex(10), cjseq::UvIndex(11), cjseq::UvIndex(12)]
         }
     );
     let ring: TexturedRing = serde_json::from_value(json!([null])).unwrap();
