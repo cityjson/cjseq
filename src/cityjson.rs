@@ -1,5 +1,5 @@
 use crate::appearance::{Appearance, MaterialKey, MaterialObject, TextureKey, TextureObject};
-use crate::city_object::{CityObject, CityObjectType};
+use crate::city_object::CityObject;
 use crate::error::{CjseqError, IndexKind, Result, Warning};
 use crate::geometry::{Geometry, GeometryTemplates};
 use crate::index::{Index, MaterialIndex, TextureIndex, UvIndex, VertexIndex};
@@ -200,14 +200,12 @@ impl CityJSON {
         }
     }
 
-    /// Whether City Object `co` roots a feature: it has no parents, or only
-    /// CityObjectGroups as parents (a group's members are not its parts).
+    /// Whether City Object `co` roots a feature: it has no parents. A
+    /// CityObjectGroup's members name the group as a parent (§ 2.5), so
+    /// they travel inside the group's feature; a member of two groups is in
+    /// both, and [`Collector`] takes it once.
     fn is_root(&self, co: &CityObject) -> bool {
-        co.parents.iter().flatten().all(|p| {
-            self.city_objects
-                .get(p)
-                .is_some_and(|pco| pco.thetype == CityObjectType::CityObjectGroup)
-        })
+        co.parents.as_ref().is_none_or(|p| p.is_empty())
     }
 
     /// The ids of the City Objects that root a feature, in `order`.
@@ -263,8 +261,7 @@ impl CityJSON {
 
     /// The feature rooted at City Object `id`: it with all of its
     /// descendants, and only the vertices and appearance entries they use,
-    /// renumbered. A CityObjectGroup's feature holds just the group.
-    /// `Ok(None)` if there is no such City Object.
+    /// renumbered. `Ok(None)` if there is no such City Object.
     ///
     /// A child id that names no City Object, or an index past the end of
     /// `vertices` or of an appearance palette, is an error.
@@ -275,8 +272,8 @@ impl CityJSON {
         }
     }
 
-    /// The root, then every descendant breadth-first. A group's members
-    /// are not followed; `seen` stops a parent/child cycle from looping.
+    /// The root, then every descendant breadth-first; `seen` stops a
+    /// parent/child cycle from looping.
     fn members<'a>(
         &'a self,
         id: &'a String,
@@ -288,9 +285,6 @@ impl CityJSON {
         while next < members.len() {
             let (parent_id, parent) = members[next];
             next += 1;
-            if parent.thetype == CityObjectType::CityObjectGroup {
-                continue;
-            }
             for child_id in parent.children.iter().flatten() {
                 if !seen.insert(child_id.as_str()) {
                     continue;
@@ -441,7 +435,17 @@ pub struct Collector {
     /// document's palettes.
     materials: HashMap<MaterialKey, usize>,
     textures: HashMap<TextureKey, usize>,
+    /// Where each distinct vertex and texture vertex already is, so equal
+    /// ones get one index and a City Object met in two features comes out
+    /// identical both times.
+    vertices: HashMap<Vertex, usize>,
+    uvs: HashMap<[u64; 2], usize>,
     warnings: Vec<Warning>,
+}
+
+/// A texture vertex's bits, `-0.0` folded onto `0.0`.
+fn uv_key(uv: [f64; 2]) -> [u64; 2] {
+    uv.map(|x| (x + 0.0).to_bits())
 }
 
 /// How one source's appearance indices map onto the document's palettes.
@@ -467,12 +471,21 @@ impl Collector {
                 .flatten()
                 .map(TextureObject::key),
         );
+        let vertices = positions(header.vertices.iter().copied());
+        let uvs = positions(
+            app.and_then(|a| a.vertices_texture.as_ref())
+                .into_iter()
+                .flatten()
+                .map(|uv| uv_key(*uv)),
+        );
         Collector {
             doc: header,
             correction: None,
             template_offset: 0,
             materials,
             textures,
+            vertices,
+            uvs,
             warnings: Vec::new(),
         }
     }
@@ -525,14 +538,13 @@ impl Collector {
             });
             maps.textures.insert(TextureIndex(i), TextureIndex(at));
         }
-        if let Some(uvs) = app.vertices_texture {
-            //-- appended verbatim, so each new index is the old one shifted by
-            //-- however many were already collected
-            let offset = doc_app.vertices_texture.as_ref().map_or(0, Vec::len);
-            for i in 0..uvs.len() {
-                maps.uvs.insert(UvIndex(i), UvIndex(offset + i));
-            }
-            doc_app.add_vertices_texture(uvs);
+        for (i, uv) in app.vertices_texture.into_iter().flatten().enumerate() {
+            let all = doc_app.vertices_texture.get_or_insert_with(Vec::new);
+            let at = *self.uvs.entry(uv_key(uv)).or_insert_with(|| {
+                all.push(uv);
+                all.len() - 1
+            });
+            maps.uvs.insert(UvIndex(i), UvIndex(at));
         }
         maps
     }
@@ -660,11 +672,16 @@ impl Collector {
 
     /// Add one feature: its City Objects, its vertices (re-expressed if a
     /// later header changed the transform) and its appearance, merged into
-    /// the document's palettes. Root members the feature schema allows but
-    /// does not name are dropped, each with a [`Collector::warnings`] entry.
+    /// the document's: equal vertices, texture vertices, materials and
+    /// textures become one entry. Root members the feature schema allows
+    /// but does not name are dropped, each with a [`Collector::warnings`]
+    /// entry.
     ///
-    /// A City Object id already collected from an earlier feature is a
-    /// [`CjseqError::DuplicateId`], and nothing of the feature is added.
+    /// A City Object already collected from an earlier feature is taken
+    /// once when it is the same City Object (as a member of two groups is,
+    /// in both groups' features), and is a [`CjseqError::DuplicateId`]
+    /// when it is not; then no City Object or vertex of the feature is
+    /// added.
     pub fn add(&mut self, mut cjf: CityJSONFeature) -> Result<()> {
         if !cjf.city_objects.contains_key(&cjf.id) {
             return Err(CjseqError::DanglingReference {
@@ -672,20 +689,7 @@ impl Collector {
                 to: cjf.id,
             });
         }
-        if let Some(id) = cjf
-            .city_objects
-            .keys()
-            .find(|id| self.doc.city_objects.contains_key(*id))
-        {
-            return Err(CjseqError::DuplicateId { id: id.clone() });
-        }
         self.check_indices(&mut cjf)?;
-        for member in cjf.other.keys() {
-            self.warnings.push(Warning::DroppedMember {
-                feature: cjf.id.clone(),
-                member: member.clone(),
-            });
-        }
         let id = cjf.id.clone();
         let mut maps = match cjf.appearance.take() {
             Some(app) => self.merge_appearance(app, &|member| Warning::DroppedMember {
@@ -694,30 +698,61 @@ impl Collector {
             }),
             None => PaletteMaps::default(),
         };
-        let doc = &mut self.doc;
-        let g_offset = doc.vertices.len();
+        //-- each vertex, re-expressed in the document's transform, and the
+        //-- index it gets: an existing one, or a new one held back until the
+        //-- feature is known to be accepted
+        let base = self.doc.vertices.len();
+        let mut new_vertices: Vec<Vertex> = Vec::new();
+        let mut pending: HashMap<Vertex, usize> = HashMap::new();
+        let t = &self.doc.transform;
+        let table: Vec<usize> = cjf
+            .vertices
+            .iter()
+            .map(|v| {
+                let v = match &self.correction {
+                    None => *v,
+                    Some(c) => [0, 1, 2].map(|k| {
+                        (((v[k] as f64 * c.scale[k]) + c.translate[k] - t.translate[k])
+                            / t.scale[k])
+                            .round() as i64
+                    }),
+                };
+                match self.vertices.get(&v) {
+                    Some(at) => *at,
+                    None => *pending.entry(v).or_insert_with(|| {
+                        new_vertices.push(v);
+                        base + new_vertices.len() - 1
+                    }),
+                }
+            })
+            .collect();
+        let mut cos = Vec::with_capacity(cjf.city_objects.len());
         for (key, mut co) in cjf.city_objects {
             for g in co.geometries_mut() {
-                g.offset_geometry_boundaries(g_offset);
+                g.for_each_vertex(&mut |vi| *vi = VertexIndex(table[vi.0]));
                 g.offset_template(self.template_offset);
                 g.update_material(&mut maps.materials);
                 g.update_texture(&mut maps.textures, &mut maps.uvs);
             }
-            doc.city_objects.insert(key, co);
-        }
-        match &self.correction {
-            None => doc.vertices.extend(cjf.vertices),
-            Some(c) => {
-                //-- re-express each vertex in the document's transform
-                let t = &doc.transform;
-                doc.vertices.extend(cjf.vertices.iter().map(|v| {
-                    [0, 1, 2].map(|k| {
-                        (((v[k] as f64 * c.scale[k]) + c.translate[k] - t.translate[k])
-                            / t.scale[k])
-                            .round() as i64
-                    })
-                }));
+            if let Some(existing) = self.doc.city_objects.get(&key) {
+                if *existing != co {
+                    return Err(CjseqError::DuplicateId { id: key });
+                }
             }
+            cos.push((key, co));
+        }
+        for member in cjf.other.keys() {
+            self.warnings.push(Warning::DroppedMember {
+                feature: cjf.id.clone(),
+                member: member.clone(),
+            });
+        }
+        for (i, v) in new_vertices.into_iter().enumerate() {
+            self.vertices.insert(v, base + i);
+            self.doc.vertices.push(v);
+        }
+        for (key, co) in cos {
+            self.doc.city_objects.entry(key).or_insert(co);
         }
         Ok(())
     }

@@ -497,32 +497,52 @@ fn collecting_rejects_a_feature_whose_indices_point_past_its_own_data() {
     }
 }
 
-/// City Object ids are unique in a document, so two features carrying the
-/// same id cannot both be collected: the second is an error, not a silent
-/// overwrite of the first.
+/// City Object ids are unique in a document. The same City Object may
+/// come in more than one feature (a member of two groups is in both
+/// groups' features), and is collected once; two different City Objects
+/// under one id are an error, not a silent overwrite.
 #[test]
-fn collecting_rejects_a_city_object_id_seen_in_an_earlier_feature() {
+fn collecting_accepts_an_identical_repeat_and_rejects_a_different_one() {
     let (header, _) = read("tests/data/small.city.jsonl");
-    let f = |id: &str, part: &str| {
+    let f = |id: &str, part: &str, x: i64| {
         CityJSONFeature::from_str(
             &json!({"type": "CityJSONFeature", "id": id,
                 "CityObjects": {id: {"type": "Building", "children": [part]},
-                                part: {"type": "BuildingPart", "parents": [id]}},
-                "vertices": []})
+                                part: {"type": "BuildingPart", "parents": [id],
+                                    "geometry": [{"type": "MultiPoint", "lod": "1", "boundaries": [1]}]}},
+                "vertices": [[9, 9, 9], [x, 0, 0]]})
             .to_string(),
         )
         .unwrap()
     };
     let mut c = Collector::new(header);
-    c.add(f("a", "p")).unwrap();
-    match c.add(f("b", "p")) {
+    c.add(f("a", "p", 1)).unwrap();
+    //-- the same "p" again, its vertex at the same place but a different index
+    let mut again = f("a2", "p", 1);
+    again.city_objects["p"].parents = Some(vec!["a".into()]);
+    again.city_objects.shift_remove("a2");
+    again.city_objects.insert(
+        "a2".into(),
+        cjseq::CityObject::new(cjseq::CityObjectType::Building),
+    );
+    again.vertices.swap(0, 1);
+    let g = again.city_objects["p"].geometry.as_mut().unwrap();
+    g[0] = serde_json::from_value(json!({"type": "MultiPoint", "lod": "1", "boundaries": [0]}))
+        .unwrap();
+    c.add(again).unwrap();
+    //-- a different "p"
+    let mut other = f("b", "p", 2);
+    other.city_objects["p"].parents = Some(vec!["a".into()]);
+    match c.add(other) {
         Err(CjseqError::DuplicateId { id }) => assert_eq!(id, "p"),
         other => panic!("expected DuplicateId, got {other:?}"),
     }
-    //-- the rejected feature left nothing behind
     let doc = c.finish();
-    assert!(!doc.city_objects.contains_key("b"));
-    assert_eq!(doc.city_objects["p"].parents, Some(vec!["a".to_string()]));
+    assert!(
+        !doc.city_objects.contains_key("b"),
+        "the rejected feature left nothing behind"
+    );
+    assert_eq!(doc.city_objects.len(), 3);
 }
 
 /// A random order is reproducible: the same seed gives the same order, and

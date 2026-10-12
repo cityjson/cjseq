@@ -325,11 +325,6 @@ impl Appearance {
             default_theme_material: None,
         }
     }
-    pub(crate) fn add_vertices_texture(&mut self, mut vs: Vec<[f64; 2]>) {
-        self.vertices_texture
-            .get_or_insert_with(Vec::new)
-            .append(&mut vs);
-    }
 }
 
 #[cfg(test)]

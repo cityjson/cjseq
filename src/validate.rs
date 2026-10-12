@@ -308,24 +308,21 @@ fn geometry(g: &Geometry, l: &Lengths, errs: &mut Vec<CjseqError>) {
 }
 
 /// Every child and parent named exists, and names the other back.
-/// `outside_root` is set for a feature: it names the one City Object whose
-/// parents may lie outside `cos` (the feature's root, whose groups are other
-/// features), and a group's members may lie outside it too.
-fn hierarchy(
-    cos: &IndexMap<String, CityObject>,
-    outside_root: Option<&str>,
-    errs: &mut Vec<CjseqError>,
-) {
+/// `in_feature` is set when `cos` is one feature: a member of several
+/// CityObjectGroups travels with each, so a City Object with a group parent
+/// in the feature may name its other groups, which live in other features.
+fn hierarchy(cos: &IndexMap<String, CityObject>, in_feature: bool, errs: &mut Vec<CjseqError>) {
+    let is_group = |id: &String| {
+        cos.get(id)
+            .is_some_and(|c| c.thetype == CityObjectType::CityObjectGroup)
+    };
     let names = |list: &Option<Vec<String>>, id: &str| {
         list.as_ref().is_some_and(|l| l.iter().any(|x| x == id))
     };
     for (id, co) in cos {
-        //-- in a feature, a group's members are features of their own
-        let members_elsewhere =
-            outside_root.is_some() && co.thetype == CityObjectType::CityObjectGroup;
+        let other_groups_elsewhere = in_feature && co.parents.iter().flatten().any(&is_group);
         for child in co.children.iter().flatten() {
             match cos.get(child) {
-                None if members_elsewhere => {}
                 None => errs.push(CjseqError::DanglingReference {
                     from: id.clone(),
                     to: child.clone(),
@@ -342,7 +339,7 @@ fn hierarchy(
         }
         for parent in co.parents.iter().flatten() {
             match cos.get(parent) {
-                None if outside_root == Some(id.as_str()) => {}
+                None if other_groups_elsewhere => {}
                 None => errs.push(CjseqError::DanglingReference {
                     from: id.clone(),
                     to: parent.clone(),
@@ -398,11 +395,11 @@ fn extension_children(cos: &IndexMap<String, CityObject>) -> Vec<Warning> {
 
 fn city_objects(
     cos: &IndexMap<String, CityObject>,
-    outside_root: Option<&str>,
+    in_feature: bool,
     l: &Lengths,
     errs: &mut Vec<CjseqError>,
 ) {
-    hierarchy(cos, outside_root, errs);
+    hierarchy(cos, in_feature, errs);
     for (id, co) in cos {
         let mut inner = Vec::new();
         city_object_type(&co.thetype, &mut inner);
@@ -469,7 +466,7 @@ impl CityJSON {
             .as_ref()
             .map_or(0, |t| t.templates.len());
         let l = Lengths::new(self.vertices.len(), Some(templates), app);
-        city_objects(&self.city_objects, None, &l, &mut errs);
+        city_objects(&self.city_objects, false, &l, &mut errs);
         errs
     }
 
@@ -504,7 +501,7 @@ impl CityJSONFeature {
             });
         }
         let l = Lengths::new(self.vertices.len(), None, self.appearance.as_ref());
-        city_objects(&self.city_objects, Some(&self.id), &l, &mut errs);
+        city_objects(&self.city_objects, true, &l, &mut errs);
         errs
     }
 

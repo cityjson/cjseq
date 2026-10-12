@@ -12,7 +12,7 @@
 - `CityObjects` and the material/texture theme maps are `IndexMap`s, and object member order is preserved, so output follows input order and is deterministic.
 - The document model and CityJSONSeq sequencing are split. `CityJSON` holds only the document; `header()` (was `get_metadata`) and `features(order)` slice it into a sequence, `feature(id)` slices one feature, and `Collector` (`new`, `add`, `add_header`, `finish`) replaces `add_cjfeature`/`add_transform_correction`. `SeqReader`/`SeqWriter` read and write a sequence line by line, as `Line::Header`/`Line::Feature`. `get_cjfeature`, `sort_cjfeatures` and the hidden sorting state are gone; `cjseq_to_cj` returns a `Result`.
 - `SortingStrategy` is `AsIs` (input order, now the CLI default), `Random { seed }` (a shuffle reproducible from its seed; `cjseq cat --seed`) or `Lexicographical`; the unimplemented `Morton`/`Hilbert` are gone.
-- A feature is rooted at every City Object whose parents are only CityObjectGroups; a group's feature holds just the group, so a member of two groups is written once. A City Object no feature reaches is a `NotInAnyFeature` error instead of being left out.
+- A City Object no feature reaches (its parent is missing, or does not list it as a child) is a `NotInAnyFeature` error from `features()` instead of being left out of `cat`'s output.
 - Warnings are a `Warning` type of their own, not `CjseqError` variants.
 - The public enums are `#[non_exhaustive]` (except `Line`).
 - `clap`, `rand` and `getrandom` are optional, behind a default `cli` feature that the binary needs; the library depends only on `serde`, `serde_json` and `indexmap`. `rust-version` is 1.85.
@@ -33,7 +33,7 @@
 - Address `location`s (Building, BuildingPart, BuildingUnit, Bridge, BridgePart) were never renumbered: `cat` and `collect` left them pointing at the wrong vertices. They are now a typed `CityObjectAddress`, renumbered and validated like any geometry.
 - `cat | collect` lost `default-theme-material`/`-texture` when the document had no geometry templates.
 - Collecting several sequences kept only a later header's transform; its geometry templates (and their appearance), extensions and root members are now merged, with GeometryInstances shifted to match, and conflicts reported.
-- `collect` turned an index past the end of a feature's own vertices or palettes into a valid-looking index into another feature's data; it is now an error. A City Object id seen in an earlier feature is a `DuplicateId` error instead of a silent overwrite.
+- `collect` turned an index past the end of a feature's own vertices or palettes into a valid-looking index into another feature's data; it is now an error. A City Object met in more than one feature (a member of two CityObjectGroups travels in both groups' features) is collected once when both copies are identical, and is a `DuplicateId` error instead of a silent overwrite when they are not; equal vertices and texture vertices are merged as features are added, so identical copies compare equal.
 - The header written by `cat` cut the appearance down to what the geometry templates use but left the templates' indices unrenumbered, so they pointed at the wrong materials and textures.
 - Metadata, address, `pointOfContact`, semantics, appearance and feature members the schema permits are kept instead of dropped or rejected; every `referenceSystem` the schema's URL pattern permits is accepted.
 - Coordinates round-trip exactly (`serde_json`'s `float_roundtrip`).

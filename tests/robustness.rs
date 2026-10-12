@@ -225,23 +225,36 @@ fn a_city_object_in_no_feature_is_an_error_not_dropped() {
     }
 }
 
-/// A CityObjectGroup's members are not its parts (§ 2.5): each member is a
-/// feature of its own, and the group's feature holds just the group, so a
-/// member of two groups is written once.
+/// A CityObjectGroup's feature carries its members (§ 2.5: they name the
+/// group in `parents`), so a member of two groups is in both groups'
+/// features; each of those features is valid on its own, and collecting
+/// them gives the member back once.
 #[test]
-fn group_members_are_features_of_their_own() {
+fn group_members_travel_inside_their_groups_features() {
     let cj = doc(
         json!({
             "g1": {"type": "CityObjectGroup", "children": ["b"]},
             "g2": {"type": "CityObjectGroup", "children": ["b", "c"]},
-            "b": {"type": "Building", "parents": ["g1", "g2"], "children": ["bp"]},
+            "b": {"type": "Building", "parents": ["g1", "g2"], "children": ["bp"],
+                "geometry": [{"type": "MultiPoint", "lod": "1", "boundaries": [0, 1]}]},
             "bp": {"type": "BuildingPart", "parents": ["b"]},
             "c": {"type": "Building", "parents": ["g2"]}
         }),
-        json!([]),
+        json!([[1, 2, 3], [4, 5, 6]]),
     );
     cj.validate().unwrap();
     let fs = features(&mut cj.clone(), SortingStrategy::AsIs);
     let ids: Vec<Vec<&String>> = fs.iter().map(|f| f.city_objects.keys().collect()).collect();
-    assert_eq!(ids, [vec!["g1"], vec!["g2"], vec!["b", "bp"], vec!["c"]]);
+    assert_eq!(ids, [vec!["g1", "b", "bp"], vec!["g2", "b", "c", "bp"]]);
+    for f in &fs {
+        f.validate().unwrap_or_else(|e| panic!("{}: {e}", f.id));
+    }
+    let mut c = cjseq::Collector::new(cj.header().unwrap());
+    for f in fs {
+        c.add(f).unwrap();
+    }
+    let back = c.finish();
+    back.validate().unwrap();
+    assert_eq!(back.city_objects.len(), 5);
+    assert_eq!(back.vertices.len(), 2);
 }
