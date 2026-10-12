@@ -53,6 +53,11 @@ pub enum CjseqError {
     MisplacedMember { member: String },
     /// An error inside one City Object.
     InCityObject { id: String, source: Box<CjseqError> },
+    /// An error on one line of a CityJSONSeq (counting from 1).
+    AtLine {
+        line: usize,
+        source: Box<CjseqError>,
+    },
     /// An error inside one geometry template.
     InTemplate {
         index: usize,
@@ -110,6 +115,7 @@ impl fmt::Display for CjseqError {
                 "a CityJSONFeature cannot carry {member:?}; only the CityJSON document can"
             ),
             CjseqError::InCityObject { id, source } => write!(f, "in City Object {id:?}: {source}"),
+            CjseqError::AtLine { line, source } => write!(f, "line {line}: {source}"),
             CjseqError::InTemplate { index, source } => {
                 write!(f, "in geometry template {index}: {source}")
             }
@@ -126,9 +132,9 @@ impl std::error::Error for CjseqError {
             CjseqError::Json(e) => Some(e),
             CjseqError::GeometryDepth { .. } => None,
             CjseqError::Io(e) => Some(e),
-            CjseqError::InCityObject { source, .. } | CjseqError::InTemplate { source, .. } => {
-                Some(source.as_ref())
-            }
+            CjseqError::InCityObject { source, .. }
+            | CjseqError::InTemplate { source, .. }
+            | CjseqError::AtLine { source, .. } => Some(source.as_ref()),
             CjseqError::Validation(_)
             | CjseqError::DanglingReference { .. }
             | CjseqError::HierarchyMismatch { .. }

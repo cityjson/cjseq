@@ -54,7 +54,16 @@ pub fn cjseq_to_cj_wasm(base_cj: JsValue, features: JsValue) -> Result<JsValue, 
         }
     };
 
-    let cj = cjseq_to_cj(base_cj, features);
+    let cj = match cjseq_to_cj(base_cj, features) {
+        Ok(cj) => cj,
+        Err(e) => {
+            web_sys::console::error_1(&format!("failed to collect features: {}", e).into());
+            return Err(JsValue::from_str(&format!(
+                "failed to collect features: {}",
+                e
+            )));
+        }
+    };
 
     match to_value(&cj) {
         Ok(js_val) => Ok(js_val),

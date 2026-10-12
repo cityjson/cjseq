@@ -423,7 +423,7 @@ fn every_fixture_and_everything_made_from_it_validates() {
                 f.validate()
                     .unwrap_or_else(|e| panic!("{name} feature {}: {e}", f.id));
             }
-            vec![cjseq::cjseq_to_cj(header, features)]
+            vec![cjseq::cjseq_to_cj(header, features).unwrap()]
         } else if name.ends_with(".json") {
             vec![CityJSON::from_str(&text).unwrap()]
         } else {
@@ -431,11 +431,10 @@ fn every_fixture_and_everything_made_from_it_validates() {
         };
         for cj in docs {
             cj.validate().unwrap_or_else(|e| panic!("{name}: {e}"));
-            let mut i = 0;
-            while let Some(f) = cj.get_cjfeature(i).unwrap() {
+            for f in cj.features(cjseq::SortingStrategy::AsIs) {
+                let f = f.unwrap();
                 f.validate()
                     .unwrap_or_else(|e| panic!("{name} sliced feature {}: {e}", f.id));
-                i += 1;
             }
             checked += 1;
         }
@@ -459,7 +458,7 @@ fn the_header_renumbers_its_templates_to_the_sliced_appearance() {
             }
         }),
     );
-    let header = cj.get_metadata().unwrap();
+    let header = cj.header().unwrap();
     header.validate().unwrap();
     let v = serde_json::to_value(&header).unwrap();
     assert_eq!(v["appearance"]["materials"], json!([{"name": "c"}]));

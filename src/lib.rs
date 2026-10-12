@@ -9,7 +9,8 @@
 //! - `city_object` — `CityObject`
 //! - `metadata` — `Metadata`, `PointOfContact`, `Address`, `ReferenceSystem`, `Transform`, `GeographicalExtent`
 //! - `error` — `CjseqError`, `Result`
-//! - `cityjson` — `CityJSON`, `CityJSONFeature`, `SortingStrategy`, and the sequencing/collect/filter logic
+//! - `cityjson` — `CityJSON`, `CityJSONFeature`, `SortingStrategy`, `Collector`
+//! - `seq` — `SeqReader`, `SeqWriter`, `Line`: CityJSONSeq in and out
 //!
 //! Every type is re-exported at the crate root, so the module boundaries
 //! above are an internal organisational detail, not part of the public
@@ -25,6 +26,7 @@ mod geometry;
 mod index;
 mod metadata;
 mod semantics;
+mod seq;
 mod validate;
 
 pub use appearance::*;
@@ -43,6 +45,7 @@ pub use index::{
 };
 pub use metadata::*;
 pub use semantics::*;
+pub use seq::{Line, SeqReader, SeqWriter};
 
 // WASM bindings module
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]

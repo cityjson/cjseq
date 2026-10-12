@@ -10,8 +10,15 @@ pub struct Transform {
     pub scale: [f64; 3],
     pub translate: [f64; 3],
 }
+impl Default for Transform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Transform {
-    pub(crate) fn new() -> Self {
+    /// The identity transform: scale 1, translate 0.
+    pub fn new() -> Self {
         Transform {
             scale: [1.0, 1.0, 1.0],
             translate: [0.0, 0.0, 0.0],

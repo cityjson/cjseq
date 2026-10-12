@@ -19,12 +19,7 @@ fn doc(city_objects: Value, vertices: Value) -> CityJSON {
 }
 
 fn features(cj: &mut CityJSON, order: SortingStrategy) -> Vec<CityJSONFeature> {
-    cj.sort_cjfeatures(order);
-    let mut out = Vec::new();
-    while let Some(f) = cj.get_cjfeature(out.len()).unwrap() {
-        out.push(f);
-    }
-    out
+    cj.features(order).map(|f| f.unwrap()).collect()
 }
 
 #[test]
@@ -144,7 +139,7 @@ fn a_dangling_child_is_an_error_not_a_panic() {
         json!({"b": {"type": "Building", "children": ["nope"]}}),
         json!([]),
     );
-    match cj.get_cjfeature(0) {
+    match cj.feature("b") {
         Err(CjseqError::DanglingReference { from, to }) => {
             assert_eq!(from, "b");
             assert_eq!(to, "nope");
@@ -160,7 +155,7 @@ fn an_out_of_range_vertex_index_is_an_error_not_a_panic() {
         json!([[1, 2, 3]]),
     );
     assert!(matches!(
-        cj.get_cjfeature(0),
+        cj.feature("b"),
         Err(CjseqError::IndexOutOfRange { .. })
     ));
 }
@@ -168,7 +163,7 @@ fn an_out_of_range_vertex_index_is_an_error_not_a_panic() {
 #[test]
 fn an_index_past_the_last_feature_is_none() {
     let cj = doc(json!({"b": {"type": "Building"}}), json!([]));
-    assert!(cj.get_cjfeature(1).unwrap().is_none());
+    assert!(cj.feature("nope").unwrap().is_none());
 }
 
 #[test]

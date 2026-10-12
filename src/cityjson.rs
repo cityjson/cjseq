@@ -1,4 +1,4 @@
-use crate::appearance::{Appearance, MaterialObject, TextureObject};
+use crate::appearance::Appearance;
 use crate::city_object::CityObject;
 use crate::error::{CjseqError, Result};
 use crate::geometry::GeometryTemplates;
@@ -59,7 +59,7 @@ fn slice_appearance(
     Ok(a)
 }
 
-/// The order in which [`CityJSON::get_cjfeature`] hands out features.
+/// The order in which [`CityJSON::features`] hands out features.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortingStrategy {
     /// The order the top-level City Objects appear in the document.
@@ -70,7 +70,10 @@ pub enum SortingStrategy {
     Lexicographical,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// A CityJSON document. It holds the document and nothing else; splitting it
+/// into a CityJSONSeq is [`CityJSON::header`] and [`CityJSON::features`], and
+/// the reverse is [`crate::Collector`].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CityJSON {
     #[serde(rename = "type")]
     pub thetype: CityJSONType,
@@ -91,27 +94,6 @@ pub struct CityJSON {
     /// Root members the schema does not name, kept verbatim.
     #[serde(flatten)]
     pub other: Map<String, Value>,
-    #[serde(skip)]
-    sorted_ids: Vec<String>,
-    #[serde(skip)]
-    transform_correction: Option<Transform>,
-}
-
-/// Equality is over the document only: `sorted_ids` and
-/// `transform_correction` are sequencing state, not CityJSON members.
-impl PartialEq for CityJSON {
-    fn eq(&self, other: &Self) -> bool {
-        self.thetype == other.thetype
-            && self.version == other.version
-            && self.transform == other.transform
-            && self.city_objects == other.city_objects
-            && self.vertices == other.vertices
-            && self.metadata == other.metadata
-            && self.appearance == other.appearance
-            && self.geometry_templates == other.geometry_templates
-            && self.extensions == other.extensions
-            && self.other == other.other
-    }
 }
 
 impl Default for CityJSON {
@@ -122,17 +104,14 @@ impl Default for CityJSON {
 
 impl FromStr for CityJSON {
     type Err = CjseqError;
-    /// Parse a CityJSON document. Its features are handed out in document
-    /// order until [`CityJSON::sort_cjfeatures`] says otherwise.
+    /// Parse a CityJSON document.
     fn from_str(s: &str) -> Result<Self> {
-        let mut cjj: CityJSON = serde_json::from_str(s)?;
-        cjj.sort_cjfeatures(SortingStrategy::AsIs);
-        Ok(cjj)
+        Ok(serde_json::from_str(s)?)
     }
 }
 
 impl CityJSON {
-    /// Create a new CityJSON instance with default values.
+    /// An empty CityJSON 2.0 document with the identity transform.
     pub fn new() -> Self {
         CityJSON {
             thetype: CityJSONType::CityJSON,
@@ -145,31 +124,20 @@ impl CityJSON {
             geometry_templates: None,
             extensions: None,
             other: Map::new(),
-            sorted_ids: vec![],
-            transform_correction: None,
         }
     }
-    /// Get the "first line" (aka metadata or header) of a CityJSONSeq: the
-    /// document without its City Objects and vertices, its appearance cut
-    /// down to what the geometry templates use. An appearance index in a
-    /// template that is out of range is an error.
-    pub fn get_metadata(&self) -> Result<Self> {
+
+    /// The first line of a CityJSONSeq: the document without its City
+    /// Objects and vertices, its appearance cut down to what the geometry
+    /// templates use. An appearance index in a template that is out of range
+    /// is an error.
+    pub fn header(&self) -> Result<Self> {
         let mut cj0 = CityJSON {
-            thetype: self.thetype.clone(),
-            version: self.version,
-            transform: self.transform.clone(),
-            metadata: self.metadata.clone(),
             city_objects: IndexMap::new(),
             vertices: Vec::new(),
             appearance: None,
-            geometry_templates: self.geometry_templates.clone(),
-            other: self.other.clone(),
-            extensions: self.extensions.clone(),
-            sorted_ids: vec![],
-            transform_correction: None,
+            ..self.clone_without_objects()
         };
-        //-- if geometry-templates have material/textures then these need to be
-        //-- added to 1st line (metadata)
         if let Some(x) = &self.geometry_templates {
             let mut gts2: GeometryTemplates = x.clone();
             let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
@@ -188,21 +156,68 @@ impl CityJSON {
         Ok(cj0)
     }
 
-    /// The `i`th feature, in the order set by [`CityJSON::sort_cjfeatures`]:
-    /// a top-level City Object with all of its descendants, and only the
-    /// vertices and appearance entries they use.
+    /// Every member but the City Objects, vertices and appearance, which
+    /// `header` rebuilds.
+    fn clone_without_objects(&self) -> Self {
+        CityJSON {
+            thetype: self.thetype.clone(),
+            version: self.version,
+            transform: self.transform.clone(),
+            city_objects: IndexMap::new(),
+            vertices: Vec::new(),
+            metadata: self.metadata.clone(),
+            appearance: None,
+            geometry_templates: self.geometry_templates.clone(),
+            extensions: self.extensions.clone(),
+            other: self.other.clone(),
+        }
+    }
+
+    /// The ids of the top-level City Objects, in `order`.
+    fn feature_ids(&self, order: SortingStrategy) -> Vec<&String> {
+        let mut ids: Vec<&String> = self
+            .city_objects
+            .iter()
+            .filter(|(_, co)| co.is_toplevel())
+            .map(|(id, _)| id)
+            .collect();
+        match order {
+            SortingStrategy::AsIs => {}
+            SortingStrategy::Random => {
+                use rand::seq::SliceRandom;
+                ids.shuffle(&mut rand::thread_rng());
+            }
+            SortingStrategy::Lexicographical => ids.sort(),
+        }
+        ids
+    }
+
+    /// The document's features, one per top-level City Object, in `order`;
+    /// see [`CityJSON::feature`].
+    pub fn features(
+        &self,
+        order: SortingStrategy,
+    ) -> impl Iterator<Item = Result<CityJSONFeature>> + '_ {
+        self.feature_ids(order)
+            .into_iter()
+            .map(move |id| self.slice(id, &self.city_objects[id]))
+    }
+
+    /// The feature rooted at City Object `id`: it with all of its
+    /// descendants, and only the vertices and appearance entries they use,
+    /// renumbered. `Ok(None)` if there is no such City Object.
     ///
-    /// `Ok(None)` once `i` is past the last feature. A child id that names no
-    /// City Object, or an index past the end of `vertices` or of an appearance
-    /// palette, is an error.
-    pub fn get_cjfeature(&self, i: usize) -> Result<Option<CityJSONFeature>> {
-        let Some(id) = self.sorted_ids.get(i) else {
-            return Ok(None);
-        };
-        let Some(root) = self.city_objects.get(id) else {
-            return Ok(None);
-        };
-        //-- the root, then every descendant depth-first; `seen` stops a
+    /// A child id that names no City Object, or an index past the end of
+    /// `vertices` or of an appearance palette, is an error.
+    pub fn feature(&self, id: &str) -> Result<Option<CityJSONFeature>> {
+        match self.city_objects.get_key_value(id) {
+            Some((id, root)) => self.slice(id, root).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    fn slice(&self, id: &String, root: &CityObject) -> Result<CityJSONFeature> {
+        //-- the root, then every descendant breadth-first; `seen` stops a
         //-- parent/child cycle from looping
         let mut members: Vec<(&String, &CityObject)> = vec![(id, root)];
         let mut seen: HashSet<&str> = HashSet::from([id.as_str()]);
@@ -243,59 +258,10 @@ impl CityJSON {
         if let Some(a) = &self.appearance {
             cjf.appearance = Some(slice_appearance(a, &m_oldnew, &t_oldnew, &t_v_oldnew)?);
         }
-        Ok(Some(cjf))
+        Ok(cjf)
     }
-    /// Used when many CityJSONSeq are used, the "transform" can
-    /// be modified (the new value is a "correction").
-    pub fn add_transform_correction(&mut self, t: Transform) {
-        self.transform_correction = Some(t);
-    }
-    pub fn add_cjfeature(&mut self, cjf: &mut CityJSONFeature) {
-        let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
-        let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
-        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
-        let g_offset = self.vertices.len();
-        if let Some(cjf_app) = &cjf.appearance {
-            if let Some(cjf_mat) = &cjf_app.materials {
-                for (i, m) in cjf_mat.iter().enumerate() {
-                    m_oldnew.insert(
-                        MaterialIndex(i),
-                        MaterialIndex(self.add_material(m.clone())),
-                    );
-                }
-            }
-            if let Some(cjf_tex) = &cjf_app.textures {
-                for (i, m) in cjf_tex.iter().enumerate() {
-                    t_oldnew.insert(TextureIndex(i), TextureIndex(self.add_texture(m.clone())));
-                }
-            }
-            if let Some(cjf_v_tex) = &cjf_app.vertices_texture {
-                //-- the feature's texture vertices are appended verbatim, so
-                //-- each one's new index is its old one shifted by however
-                //-- many were already collected
-                let t_v_offset = self
-                    .appearance
-                    .as_ref()
-                    .and_then(|a| a.vertices_texture.as_ref())
-                    .map_or(0, Vec::len);
-                for i in 0..cjf_v_tex.len() {
-                    t_v_oldnew.insert(UvIndex(i), UvIndex(t_v_offset + i));
-                }
-                self.add_vertices_texture(cjf_v_tex.clone());
-            }
-        }
 
-        for (key, co) in &mut cjf.city_objects {
-            for g in co.geometry.iter_mut().flatten() {
-                g.offset_geometry_boundaries(g_offset);
-                g.update_material(&mut m_oldnew);
-                g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
-            }
-            self.add_co(key.to_string(), co.clone());
-        }
-        self.add_vertices(&mut cjf.vertices);
-        self.sorted_ids.push(cjf.id.clone());
-    }
+    /// Merge identical vertices, renumbering every geometry to match.
     pub fn remove_duplicate_vertices(&mut self) {
         let mut h: HashMap<Vertex, usize> = HashMap::new();
         let mut newids: HashMap<VertexIndex, VertexIndex> = HashMap::new();
@@ -369,63 +335,111 @@ impl CityJSON {
             *tr += m as f64 * sc;
         }
     }
+    /// The number of top-level City Objects, ie of features.
     pub fn number_of_city_objects(&self) -> usize {
         self.city_objects
             .values()
             .filter(|co| co.is_toplevel())
             .count()
     }
-    /// Set the order in which [`CityJSON::get_cjfeature`] hands out features.
-    pub fn sort_cjfeatures(&mut self, ss: SortingStrategy) {
-        self.sorted_ids = self
-            .city_objects
-            .iter()
-            .filter(|(_, co)| co.is_toplevel())
-            .map(|(key, _)| key.clone())
-            .collect();
-        match ss {
-            SortingStrategy::AsIs => {}
-            SortingStrategy::Random => {
-                use rand::seq::SliceRandom;
-                self.sorted_ids.shuffle(&mut rand::thread_rng());
-            }
-            SortingStrategy::Lexicographical => self.sorted_ids.sort(),
+}
+
+/// Collects a CityJSONSeq back into one CityJSON document: start from the
+/// header, [`Collector::add`] each feature, then [`Collector::finish`].
+///
+/// Features from several sequences can be collected into one document: hand
+/// each further sequence's header to [`Collector::add_header`], and the
+/// features that follow are re-expressed in the first header's transform.
+#[derive(Debug, Clone)]
+pub struct Collector {
+    doc: CityJSON,
+    /// The transform the features being added are expressed in, when it is
+    /// not the document's.
+    correction: Option<Transform>,
+}
+
+impl Collector {
+    pub fn new(header: CityJSON) -> Self {
+        Collector {
+            doc: header,
+            correction: None,
         }
     }
-    fn add_co(&mut self, id: String, co: CityObject) {
-        self.city_objects.insert(id, co);
+
+    /// The header of a further sequence: the features added after it are in
+    /// its transform.
+    pub fn add_header(&mut self, header: CityJSON) -> Result<()> {
+        self.correction = (header.transform != self.doc.transform).then_some(header.transform);
+        Ok(())
     }
-    fn add_vertices(&mut self, vs: &mut Vec<Vertex>) {
-        if let Some(c) = &self.transform_correction {
-            //-- re-express each vertex in this document's transform
-            let t = &self.transform;
-            for v in vs.iter() {
-                let mut out = [0; 3];
-                for k in 0..3 {
-                    out[k] = (((v[k] as f64 * c.scale[k]) + c.translate[k] - t.translate[k])
-                        / t.scale[k])
-                        .round() as i64;
+
+    /// Add one feature: its City Objects, its vertices (re-expressed if a
+    /// later header changed the transform) and its appearance, merged into
+    /// the document's palettes.
+    pub fn add(&mut self, mut cjf: CityJSONFeature) -> Result<()> {
+        if !cjf.city_objects.contains_key(&cjf.id) {
+            return Err(CjseqError::DanglingReference {
+                from: "CityJSONFeature.id".to_string(),
+                to: cjf.id,
+            });
+        }
+        let doc = &mut self.doc;
+        let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
+        let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
+        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
+        let g_offset = doc.vertices.len();
+        if let Some(cjf_app) = cjf.appearance.take() {
+            let app = doc.appearance.get_or_insert_with(Appearance::new);
+            for (i, m) in cjf_app.materials.into_iter().flatten().enumerate() {
+                m_oldnew.insert(MaterialIndex(i), MaterialIndex(app.add_material(m)));
+            }
+            for (i, t) in cjf_app.textures.into_iter().flatten().enumerate() {
+                t_oldnew.insert(TextureIndex(i), TextureIndex(app.add_texture(t)));
+            }
+            if let Some(uvs) = cjf_app.vertices_texture {
+                //-- the feature's texture vertices are appended verbatim, so
+                //-- each one's new index is its old one shifted by however
+                //-- many were already collected
+                let t_v_offset = app.vertices_texture.as_ref().map_or(0, Vec::len);
+                for i in 0..uvs.len() {
+                    t_v_oldnew.insert(UvIndex(i), UvIndex(t_v_offset + i));
                 }
-                self.vertices.push(out);
+                app.add_vertices_texture(uvs);
             }
-        } else {
-            self.vertices.append(vs);
         }
+        for (key, mut co) in cjf.city_objects {
+            for g in co.geometry.iter_mut().flatten() {
+                g.offset_geometry_boundaries(g_offset);
+                g.update_material(&mut m_oldnew);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
+            }
+            doc.city_objects.insert(key, co);
+        }
+        match &self.correction {
+            None => doc.vertices.extend(cjf.vertices),
+            Some(c) => {
+                //-- re-express each vertex in the document's transform
+                let t = &doc.transform;
+                doc.vertices.extend(cjf.vertices.iter().map(|v| {
+                    [0, 1, 2].map(|k| {
+                        (((v[k] as f64 * c.scale[k]) + c.translate[k] - t.translate[k])
+                            / t.scale[k])
+                            .round() as i64
+                    })
+                }));
+            }
+        }
+        Ok(())
     }
-    fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
-        self.appearance
-            .get_or_insert_with(Appearance::new)
-            .add_vertices_texture(vs);
-    }
-    fn add_material(&mut self, jm: MaterialObject) -> usize {
-        self.appearance
-            .get_or_insert_with(Appearance::new)
-            .add_material(jm)
-    }
-    fn add_texture(&mut self, jm: TextureObject) -> usize {
-        self.appearance
-            .get_or_insert_with(Appearance::new)
-            .add_texture(jm)
+
+    /// The collected document, with duplicate vertices merged, the transform
+    /// moved to the vertices' minimum corner and the geographical extent
+    /// recomputed.
+    pub fn finish(mut self) -> CityJSON {
+        self.doc.remove_duplicate_vertices();
+        self.doc.update_transform();
+        self.doc.update_geographicalextent();
+        self.doc
     }
 }
 
@@ -488,18 +502,14 @@ impl CityJSONFeature {
     }
 }
 
-/// Collects a base CityJSON metadata and a vector of CityJSONFeatures
-/// into a complete CityJSON object
-pub fn cjseq_to_cj(mut base_cj: CityJSON, features: Vec<CityJSONFeature>) -> CityJSON {
-    for mut feature in features {
-        base_cj.add_cjfeature(&mut feature);
+/// Collect a header and its features into one CityJSON document; see
+/// [`Collector`].
+pub fn cjseq_to_cj(header: CityJSON, features: Vec<CityJSONFeature>) -> Result<CityJSON> {
+    let mut c = Collector::new(header);
+    for f in features {
+        c.add(f)?;
     }
-
-    base_cj.remove_duplicate_vertices();
-    base_cj.update_transform();
-    base_cj.update_geographicalextent();
-
-    base_cj
+    Ok(c.finish())
 }
 
 /// The CityJSON versions this crate reads and writes.
@@ -571,41 +581,6 @@ mod tests {
         let mut c = CityJSON::new();
         c.version = CityJSONVersion::V1_1;
         assert_ne!(a, c);
-    }
-
-    /// `sorted_ids` and `transform_correction` are `#[serde(skip)]` internal
-    /// bookkeeping, not part of the document: `sorted_ids` is populated by
-    /// `from_str` iterating `city_objects` (a `HashMap`, whose iteration
-    /// order is not guaranteed stable across independently-constructed
-    /// maps), and `sort_cjfeatures(Random)` shuffles it further. Two
-    /// `CityJSON`s parsed from the identical string represent the identical
-    /// document and must compare equal regardless of what order that
-    /// bookkeeping happened to land in. A fixture with a single top-level
-    /// CityObject cannot exercise this -- `sorted_ids` would trivially have
-    /// one, unambiguous order either way -- so this uses five.
-    #[test]
-    fn cityjson_parsed_twice_from_the_same_string_is_equal_regardless_of_hashmap_order() {
-        let input = serde_json::json!({
-            "type": "CityJSON",
-            "version": "2.0",
-            "transform": {"scale": [1.0, 1.0, 1.0], "translate": [0.0, 0.0, 0.0]},
-            "CityObjects": {
-                "id-a": {"type": "Building"},
-                "id-b": {"type": "Building"},
-                "id-c": {"type": "Building"},
-                "id-d": {"type": "Building"},
-                "id-e": {"type": "Building"}
-            },
-            "vertices": []
-        })
-        .to_string();
-        let a = CityJSON::from_str(&input).unwrap();
-        let b = CityJSON::from_str(&input).unwrap();
-        assert_eq!(
-            a, b,
-            "the same document parsed twice must be equal, independent of internal \
-             bookkeeping order"
-        );
     }
 
     #[test]

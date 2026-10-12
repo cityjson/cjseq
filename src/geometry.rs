@@ -379,7 +379,7 @@ impl Geometry {
     /// Renumber every texture index against `t_oldnew` and every texture
     /// vertex against `t_v_oldnew`, both in first-encounter order. An index
     /// already in a map keeps the value the map gives it, so a caller that
-    /// knows the target numbering up front (as `CityJSON::add_cjfeature`
+    /// knows the target numbering up front (as `Collector::add`
     /// does) fills the map first.
     pub(crate) fn update_texture(
         &mut self,

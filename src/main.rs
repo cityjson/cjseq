@@ -1,21 +1,11 @@
 use cjseq::error::Result;
-use cjseq::CityJSON;
-use cjseq::CityJSONFeature;
-use cjseq::CityJSONType;
-use cjseq::CityObjectType;
-use cjseq::CjseqError;
-use cjseq::Transform;
-use std::str::FromStr;
-
-extern crate clap;
+use cjseq::{
+    CityJSON, CityObjectType, CjseqError, Collector, Line, SeqReader, SeqWriter, Transform,
+};
 use clap::{Parser, Subcommand, ValueEnum};
-use serde_json::Value;
-
 use rand::Rng;
 use std::fs::File;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -72,50 +62,26 @@ enum Commands {
         #[arg(long, value_name = "X", value_parser = clap::value_parser!(u32).range(1..), group = "exclusive")]
         random: Option<u32>,
     },
+    /// Check a CityJSON or CityJSONSeq file for references that do not
+    /// resolve; prints every problem found
+    Validate {
+        /// CityJSON (.json) or CityJSONSeq (.jsonl) input file; stdin if absent
+        file: Option<PathBuf>,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
-
-    match &cli.command {
-        //-- cat
+    let result = match &cli.command {
         Commands::Cat { file, order } => {
-            let o2 = match order.clone().unwrap_or(SortingStrategy::AsIs) {
+            let order = match order.clone().unwrap_or(SortingStrategy::AsIs) {
                 SortingStrategy::AsIs => cjseq::SortingStrategy::AsIs,
                 SortingStrategy::Random => cjseq::SortingStrategy::Random,
                 SortingStrategy::Lexicographical => cjseq::SortingStrategy::Lexicographical,
             };
-            match file {
-                Some(x) => {
-                    if let Err(e) = cat_from_file(x, o2) {
-                        eprintln!("{e}");
-                        std::process::exit(1);
-                    }
-                }
-                None => {
-                    if let Err(e) = cat_from_stdin(o2) {
-                        eprintln!("{e}");
-                        std::process::exit(1);
-                    }
-                }
-            }
+            read_all(file.as_deref()).and_then(|s| cat(&s, order))
         }
-        //-- collect
-        Commands::Collect { files } => match files {
-            Some(x) => {
-                if let Err(e) = collect_from_files(x) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
-            None => {
-                if let Err(e) = collect_from_stdin() {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
-        },
-        //-- filter
+        Commands::Collect { files } => collect(files.as_deref().unwrap_or_default()),
         Commands::Filter {
             bbox,
             cotype,
@@ -123,251 +89,187 @@ fn main() {
             radius,
             random,
         } => {
-            if bbox.is_none() && cotype.is_none() && radius.is_none() && random.is_none() {
-                if let Err(e) = filter_random(*exclude, 1) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
+            let keep = if let Some(b) = bbox {
+                Filter::Bbox([b[0], b[1], b[2], b[3]])
+            } else if let Some(c) = cotype {
+                //-- parsed through the same type the City Objects carry, so
+                //-- the comparison is enum to enum
+                match serde_json::from_value::<CityObjectType>(serde_json::json!(c)) {
+                    Ok(t) => Filter::CoType(t),
+                    Err(e) => exit_with(e.into()),
                 }
-            }
-            if bbox.is_some() {
-                if let Err(e) = filter_bbox(*exclude, &bbox.clone().unwrap()) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
-            if cotype.is_some() {
-                if let Err(e) = filter_cotype(*exclude, cotype.clone().unwrap()) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
-            if radius.is_some() {
-                let p: Vec<f64> = radius.clone().unwrap();
-                if let Err(e) = filter_radius(*exclude, p[0], p[1], p[2]) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
-            if random.is_some() {
-                if let Err(e) = filter_random(*exclude, random.unwrap()) {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
+            } else if let Some(r) = radius {
+                Filter::Radius(r[0], r[1], r[2])
+            } else {
+                Filter::Random(random.unwrap_or(1))
+            };
+            filter(&keep, *exclude)
         }
+        Commands::Validate { file } => read_all(file.as_deref()).and_then(|s| validate(&s)),
+    };
+    if let Err(e) = result {
+        exit_with(e);
     }
 }
 
-fn filter_random(exclude: bool, rand_factor: u32) -> Result<()> {
-    let stdin = std::io::stdin();
+fn exit_with(e: CjseqError) -> ! {
+    eprintln!("{e}");
+    std::process::exit(1);
+}
+
+fn read_all(file: Option<&Path>) -> Result<String> {
+    let mut s = String::new();
+    match file {
+        Some(p) => {
+            File::open(p)?.read_to_string(&mut s)?;
+        }
+        None => {
+            io::stdin().read_to_string(&mut s)?;
+        }
+    }
+    Ok(s)
+}
+
+fn cat(input: &str, order: cjseq::SortingStrategy) -> Result<()> {
+    let cj: CityJSON = input.parse()?;
+    let mut w = SeqWriter::new(BufWriter::new(io::stdout().lock()));
+    w.write_header(&cj.header()?)?;
+    for f in cj.features(order) {
+        w.write_feature(&f?)?;
+    }
+    w.into_inner().flush()?;
+    Ok(())
+}
+
+/// Collect every line of every sequence into one document: the first header
+/// starts it, later headers set the transform of the features after them.
+fn collect(files: &[String]) -> Result<()> {
+    let mut collector: Option<Collector> = None;
+    let mut read = |r: &mut dyn BufRead| -> Result<()> {
+        for line in SeqReader::new(r) {
+            match (line?, collector.as_mut()) {
+                (Line::Header(h), None) => collector = Some(Collector::new(h)),
+                (Line::Header(h), Some(c)) => c.add_header(h)?,
+                (Line::Feature(f), Some(c)) => c.add(f)?,
+                (Line::Feature(_), None) => {
+                    return Err(CjseqError::Validation(
+                        "a CityJSONFeature came before any CityJSON header line".to_string(),
+                    ))
+                }
+            }
+        }
+        Ok(())
+    };
+    if files.is_empty() {
+        read(&mut io::stdin().lock())?;
+    } else {
+        for file in files {
+            read(&mut BufReader::new(File::open(file)?))?;
+        }
+    }
+    let cj = collector.map(Collector::finish).unwrap_or_default();
+    let mut out = BufWriter::new(io::stdout().lock());
+    serde_json::to_writer(&mut out, &cj)?;
+    out.write_all(b"\n")?;
+    out.flush()?;
+    Ok(())
+}
+
+enum Filter {
+    Bbox([f64; 4]),
+    CoType(CityObjectType),
+    Radius(f64, f64, f64),
+    /// Keep 1 in X
+    Random(u32),
+}
+
+/// Copy the sequence on stdin to stdout, keeping the header lines and the
+/// features `keep` selects (or, with `exclude`, the others). Lines are copied
+/// as they are, not re-serialized.
+fn filter(keep: &Filter, exclude: bool) -> Result<()> {
     let mut rng = rand::thread_rng();
-    for line in stdin.lock().lines() {
-        let mut w: bool = false;
-        if let Ok(l) = line {
-            let j: Value = serde_json::from_str(&l)?;
-            if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-            } else {
-                let r: u32 = rng.gen_range(1..=rand_factor);
-                if r == 1 {
-                    w = true;
-                }
-                if (w && !exclude) || (!w && exclude) {
-                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-                }
-            }
+    let mut transform = Transform::new();
+    let mut out = BufWriter::new(io::stdout().lock());
+    for (i, text) in io::stdin().lock().lines().enumerate() {
+        let text = text?;
+        if text.trim().is_empty() {
+            continue;
         }
-    }
-    Ok(())
-}
-
-fn filter_cotype(exclude: bool, cotype: String) -> Result<()> {
-    // The CLI accepts any type name the user types (a core type such as
-    // "Building", or an Extension type such as "+NoiseBuilding"); parse it
-    // through the same enum used for the CityObjects being filtered so the
-    // comparison below is enum-to-enum, not string-to-string.
-    let cotype: CityObjectType = serde_json::from_value(serde_json::Value::String(cotype))?;
-    let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let mut w: bool = false;
-        if let Ok(l) = line {
-            let j: Value = serde_json::from_str(&l)?;
-            if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-            } else {
-                let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-                if cjf.city_objects[&cjf.id].get_type() == cotype {
-                    w = true;
-                }
-                if (w && !exclude) || (!w && exclude) {
-                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-                }
+        let at = |e: CjseqError| CjseqError::AtLine {
+            line: i + 1,
+            source: Box::new(e),
+        };
+        let selected = match text.parse::<Line>().map_err(at)? {
+            Line::Header(h) => {
+                transform = h.transform;
+                writeln!(out, "{text}")?;
+                continue;
             }
-        }
-    }
-
-    Ok(())
-}
-
-fn filter_bbox(exclude: bool, bbox: &[f64]) -> Result<()> {
-    let stdin = std::io::stdin();
-    let mut cj: CityJSON = CityJSON::new();
-    for line in stdin.lock().lines() {
-        let mut w: bool = false;
-        if let Ok(l) = line {
-            let j: Value = serde_json::from_str(&l)?;
-            if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-                cj = CityJSON::from_str(&l)?;
-            } else {
-                let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-                //-- a feature with no vertices is nowhere, so never inside
-                if let Some(ci) = cjf.centroid() {
-                    let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
-                    let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
-                    if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
-                        w = true;
+            Line::Feature(f) => {
+                //-- the real-world centre, or None for a feature with no
+                //-- vertices, which is nowhere and so never inside
+                let centre = f
+                    .centroid()
+                    .map(|c| [0, 1].map(|k| c[k] * transform.scale[k] + transform.translate[k]));
+                match keep {
+                    Filter::Bbox([minx, miny, maxx, maxy]) => centre
+                        .is_some_and(|[x, y]| x > *minx && x < *maxx && y > *miny && y < *maxy),
+                    Filter::Radius(cx, cy, r) => {
+                        centre.is_some_and(|[x, y]| (x - cx).powi(2) + (y - cy).powi(2) <= r * r)
                     }
-                }
-                if (w && !exclude) || (!w && exclude) {
-                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<()> {
-    let stdin = std::io::stdin();
-    let mut cj: CityJSON = CityJSON::new();
-    for line in stdin.lock().lines() {
-        let mut w: bool = false;
-        if let Ok(l) = line {
-            let j: Value = serde_json::from_str(&l)?;
-            if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-                cj = CityJSON::from_str(&l)?;
-            } else {
-                let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-                //-- a feature with no vertices is nowhere, so never inside
-                if let Some(ci) = cjf.centroid() {
-                    let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
-                    let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
-                    let d2 = (cx - x).powf(2.0) + (cy - y).powf(2.0);
-                    if d2 <= (r * r) {
-                        w = true;
-                    }
-                }
-                if (w && !exclude) || (!w && exclude) {
-                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn collect_from_stdin() -> Result<()> {
-    let stdin = std::io::stdin();
-    let mut cjj = CityJSON::new();
-    let mut cjj_init: bool = false;
-    for json_line in stdin.lock().lines().map_while(std::result::Result::ok) {
-        let j: Value = serde_json::from_str(&json_line)?;
-        if j.get("type").unwrap() == "CityJSON" {
-            if !cjj_init {
-                cjj = CityJSON::from_str(&json_line)?;
-                cjj_init = true;
-            } else {
-                let t: Transform = serde_json::from_value(j.get("transform").unwrap().clone())?;
-                cjj.add_transform_correction(t);
-            }
-        } else {
-            let mut cjf = CityJSONFeature::from_str(&json_line)?;
-            cjj.add_cjfeature(&mut cjf);
-        }
-    }
-    cjj.remove_duplicate_vertices();
-    cjj.update_transform();
-    cjj.update_geographicalextent();
-    io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
-    Ok(())
-}
-
-fn collect_from_files(files: &[String]) -> Result<()> {
-    let mut cjj = CityJSON::new();
-    let mut cjj_init: bool = false;
-    for file in files {
-        let path = PathBuf::from(file);
-        let f = File::open(path.canonicalize()?)?;
-        let br = BufReader::new(f);
-        for (i, line) in br.lines().enumerate() {
-            match &line {
-                Ok(l) => {
-                    if i == 0 {
-                        if !cjj_init {
-                            cjj = CityJSON::from_str(l)?;
-                            cjj_init = true;
-                        } else {
-                            let cjj2 = CityJSON::from_str(l)?;
-                            let t: Transform = cjj2.transform;
-                            cjj.add_transform_correction(t);
+                    Filter::CoType(t) => match f.city_objects.get(&f.id) {
+                        Some(co) => co.thetype == *t,
+                        None => {
+                            return Err(at(CjseqError::DanglingReference {
+                                from: "CityJSONFeature.id".to_string(),
+                                to: f.id,
+                            }))
                         }
-                    } else {
-                        let mut cjf: CityJSONFeature = CityJSONFeature::from_str(l)?;
-                        cjj.add_cjfeature(&mut cjf);
-                    }
+                    },
+                    Filter::Random(x) => rng.gen_range(1..=*x) == 1,
                 }
-                Err(error) => eprintln!("Error reading line: {}", error),
+            }
+        };
+        if selected != exclude {
+            writeln!(out, "{text}")?;
+        }
+    }
+    out.flush()?;
+    Ok(())
+}
+
+/// Print every problem in a CityJSON document or a CityJSONSeq; fail if
+/// there is one.
+fn validate(input: &str) -> Result<()> {
+    let mut problems: Vec<String> = Vec::new();
+    match input.parse::<CityJSON>() {
+        Ok(cj) => {
+            problems.extend(cj.errors().iter().map(ToString::to_string));
+        }
+        _ => {
+            for line in SeqReader::new(input.as_bytes()) {
+                match line {
+                    Err(e) => problems.push(e.to_string()),
+                    Ok(Line::Header(h)) => {
+                        problems.extend(h.errors().iter().map(|e| format!("header: {e}")))
+                    }
+                    Ok(Line::Feature(f)) => problems.extend(
+                        f.errors()
+                            .iter()
+                            .map(|e| format!("feature {:?}: {e}", f.id)),
+                    ),
+                }
             }
         }
     }
-    cjj.remove_duplicate_vertices();
-    cjj.update_transform();
-    cjj.update_geographicalextent();
-    io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
-    Ok(())
-}
-
-fn cat_from_stdin(order: cjseq::SortingStrategy) -> Result<()> {
-    let mut input = String::new();
-    match std::io::stdin().read_to_string(&mut input) {
-        Ok(_) => {
-            let mut cjj: CityJSON = CityJSON::from_str(&input)?;
-            cat(&mut cjj, order)?;
+    for p in &problems {
+        println!("{p}");
+    }
+    match problems.len() {
+        0 => {
+            println!("valid");
+            Ok(())
         }
-        Err(error) => {
-            eprintln!("Error: {}", error);
-        }
+        n => Err(CjseqError::Validation(format!("{n} problem(s) found"))),
     }
-    Ok(())
-}
-
-fn cat_from_file(file: &Path, order: cjseq::SortingStrategy) -> Result<()> {
-    let f = File::open(file.canonicalize()?)?;
-    let mut br = BufReader::new(f);
-    let mut json_content = String::new();
-    br.read_to_string(&mut json_content)?;
-    let mut cjj: CityJSON = CityJSON::from_str(&json_content)?;
-    cat(&mut cjj, order)?;
-    Ok(())
-}
-
-fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
-    if cjj.thetype != CityJSONType::CityJSON {
-        return Err(CjseqError::Validation(
-            "Input file not CityJSON.".to_string(),
-        ));
-    }
-    cjj.sort_cjfeatures(order);
-    //-- first line: the CityJSON "metadata"
-    let cj1 = cjj.get_metadata()?;
-    io::stdout().write_all(format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
-    //-- the other lines for each CityJSONSeq
-    let mut i: usize = 0;
-    while let Some(cjf) = cjj.get_cjfeature(i)? {
-        i += 1;
-        io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
-    }
-    Ok(())
 }

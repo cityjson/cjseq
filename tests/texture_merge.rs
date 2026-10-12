@@ -75,7 +75,7 @@ fn collecting_several_textured_features_keeps_every_uv() {
     let b = feature("b", &b_uvs, &[[3, 1, 2], [2, 0, 3]]);
     let c = feature("c", &a_uvs, &[[2, 1, 0]]);
 
-    let cj = cjseq_to_cj(header(), vec![a, b, c]);
+    let cj = cjseq_to_cj(header(), vec![a, b, c]).unwrap();
     cj.validate().unwrap();
 
     assert_eq!(
@@ -99,10 +99,10 @@ fn collecting_several_textured_features_keeps_every_uv() {
 fn slicing_a_feature_out_keeps_only_the_uvs_it_uses() {
     let uvs = [[0.0, 0.0], [0.1, 0.0], [0.1, 0.1], [0.9, 0.9], [0.8, 0.8]];
     //-- uses palette entries 4, 1, 2 only
-    let cj = cjseq_to_cj(header(), vec![feature("a", &uvs, &[[4, 1, 2]])]);
+    let cj = cjseq_to_cj(header(), vec![feature("a", &uvs, &[[4, 1, 2]])]).unwrap();
     let cj = CityJSON::from_str(&serde_json::to_string(&cj).unwrap()).unwrap();
 
-    let f = cj.get_cjfeature(0).unwrap().unwrap();
+    let f = cj.feature("a").unwrap().unwrap();
     let app = f.appearance.as_ref().unwrap();
     assert_eq!(
         app.vertices_texture.as_deref(),
@@ -120,17 +120,17 @@ fn a_cat_then_collect_round_trip_keeps_every_uv() {
             feature("a", &uvs, &[[3, 1, 2]]),
             feature("b", &uvs, &[[0, 2, 1], [1, 3, 0]]),
         ],
-    );
+    )
+    .unwrap();
     let expected_a = resolved_uvs(&doc, "a");
     let expected_b = resolved_uvs(&doc, "b");
 
-    let mut doc = CityJSON::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
-    doc.sort_cjfeatures(cjseq::SortingStrategy::Lexicographical);
-    let mut features = Vec::new();
-    while let Some(f) = doc.get_cjfeature(features.len()).unwrap() {
-        features.push(f);
-    }
-    let back = cjseq_to_cj(doc.get_metadata().unwrap(), features);
+    let doc = CityJSON::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+    let features: Vec<CityJSONFeature> = doc
+        .features(cjseq::SortingStrategy::Lexicographical)
+        .map(|f| f.unwrap())
+        .collect();
+    let back = cjseq_to_cj(doc.header().unwrap(), features).unwrap();
     back.validate().unwrap();
 
     assert_eq!(resolved_uvs(&back, "a"), expected_a);
