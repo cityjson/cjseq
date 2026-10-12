@@ -54,3 +54,8 @@ pub mod wasm;
 // Re-export WASM functions for convenience
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 pub use wasm::*;
+
+/// The README's examples, compiled and run as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

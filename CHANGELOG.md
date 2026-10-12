@@ -2,19 +2,34 @@
 
 ## [0.5.0] - unreleased
 ### Modified (breaking)
-- The library is split into per-concern modules (`geometry`, `semantics`, `appearance`, `city_object`, `metadata`, `error`, `cityjson`); every type is still re-exported at the crate root.
-- Geometry boundaries, semantics values and appearance values carry their nesting depth in their type; `NestedArray` is removed. Null sub-arrays are accepted where the CityJSON schema allows them, and an explicit `null` material `values` stays distinct from an absent one.
-- CityObject and semantic-surface types are typed enums, with support for extension types (`+Name`).
-- Materials and textures in the appearance library are typed structs; members the schema does not name are rejected.
-- `CityObject.geographicalExtent` is `[f64; 6]`, texture vertices are `[f64; 2]`.
-- Errors are a `CjseqError` type; `Result<T>` lives at `cjseq::error::Result` and is no longer re-exported at the root.
+- The CityJSON schema's structure is carried in the types:
+  - geometry boundaries, and semantics, material and texture `values`, are nested exactly as deeply as their geometry type requires; `NestedArray` and the untagged value enums are gone, and each `Geometry` variant names its own value shapes (`PrimitiveValues`, `SolidValues`, `MultiSolidValues`);
+  - one index type per kind of index (`VertexIndex`, `UvIndex`, `MaterialIndex`, `TextureIndex`, `SurfaceIndex`, `TemplateIndex`);
+  - vertices are `[i64; 3]`, `transform` scale/translate `[f64; 3]`, `vertices-templates` `[f64; 3]`, a GeometryInstance's boundaries `[VertexIndex; 1]`, texture vertices `[f64; 2]`, extents `[f64; 6]`;
+  - `Lod` holds one of the schema's twenty LoD values and is required on every primitive; `version` is a `CityJSONVersion` (1.1 or 2.0); `attributes` is a JSON object; `extensions` maps a name to an `Extension { url, version }`; `contactType` and `role` are enums; a texture ring is `TexturedRing::Untextured` or `Textured { texture, uvs }`;
+  - City Object and semantic surface types are enums with an `Extension` case, which must start with `+`.
+- Objects the schema closes (geometries, `transform`, `appearance`, `geometry-templates`, materials, textures) reject members it does not name; every other object keeps them in an `other: serde_json::Map`.
+- `CityObjects` and the material/texture theme maps are `IndexMap`s, and object member order is preserved, so output follows input order and is deterministic.
+- The document model and CityJSONSeq sequencing are split. `CityJSON` holds only the document; `header()` (was `get_metadata`) and `features(order)` slice it into a sequence, `feature(id)` slices one feature, and `Collector` (`new`, `add`, `add_header`, `finish`) replaces `add_cjfeature`/`add_transform_correction`. `SeqReader`/`SeqWriter` read and write a sequence line by line, as `Line::Header`/`Line::Feature`. `get_cjfeature`, `sort_cjfeatures` and the hidden sorting state are gone; `cjseq_to_cj` returns a `Result`.
+- `SortingStrategy` is `AsIs` (input order, now the CLI default), `Random` (a real shuffle) or `Lexicographical`; the unimplemented `Morton`/`Hilbert` are gone.
+- Errors are a `CjseqError` with structured variants (`IndexOutOfRange`, `DanglingReference`, `HierarchyMismatch`, `ValueCount`, `MisplacedMember`, located by `InCityObject`, `InTemplate`, `AtLine`); `Result<T>` lives at `cjseq::error::Result`. Malformed input is an error, never a panic.
+- The library is split into per-concern modules; every type is re-exported at the crate root. `CityJSON` and `CityJSONFeature` implement `FromStr` and `Default`.
 - wasm-bindgen bindings are behind an off-by-default `wasm` cargo feature, so library consumers building for wasm32 no longer inherit them.
 ### Added
-- `CityObject::new`, `children_roles` on `CityObject`, `PartialEq`/`Eq` on the public structs.
-- Round-trip tests over real CityJSONSeq fixtures.
+- `validate()`/`errors()` on `CityJSON` and `CityJSONFeature`: every vertex, template, semantic surface, material, texture and texture-vertex index is in range, value arrays match the boundaries they describe, the parent/child hierarchy agrees with itself, and a feature carries no document-only members. The CLI has a `validate` subcommand.
+- Features keep every descendant of their top-level City Object, not only its children.
+- `CityObject::new`, `children_roles`, `Geometry::surfaces`, `PartialEq` on the public types.
+- Round-trip, validation and sequencing tests over real CityJSONSeq fixtures; CI runs fmt, clippy with warnings denied, the tests and the wasm build.
 ### Fixed
-- Metadata, address, `pointOfContact`, semantics and appearance members that the schema permits are kept instead of dropped or rejected.
-- Every `referenceSystem` the schema's URL pattern permits is accepted.
+- `collect` corrupted the texture coordinates of every textured feature after the first.
+- The header written by `cat` cut the appearance down to what the geometry templates use but left the templates' indices unrenumbered, so they pointed at the wrong materials and textures.
+- Metadata, address, `pointOfContact`, semantics, appearance and feature members the schema permits are kept instead of dropped or rejected; every `referenceSystem` the schema's URL pattern permits is accepted.
+- Coordinates round-trip exactly (`serde_json`'s `float_roundtrip`).
+- An empty document no longer gets a nonsense `translate` from `collect`, and an empty feature no longer has a NaN centroid.
+### Performance
+Against 0.4.0, release builds, median of 3 runs on one machine:
+- a 65 MB, 15,000-feature CityJSONSeq (`tests/data/small.city.jsonl` repeated): `collect` 0.95 s to 0.47 s, `cat` 0.57 s to 0.44 s, `filter --radius` 0.40 s to 0.25 s; `collect` gives the same objects, vertices, transform and real coordinates;
+- 80,000 features with one distinct material each: `collect` 68.3 s to 0.23 s, as materials and textures are merged through a hash map instead of a linear scan.
 
 ## [0.4.0] - 2025-09-12
 ### Modified
