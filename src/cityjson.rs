@@ -152,6 +152,15 @@ impl CityJSON {
             }
             //-- the templates now index the sliced appearance
             cj0.geometry_templates = Some(gts2);
+        } else if let Some(a) = &self.appearance {
+            //-- no templates, so no palette to carry, but the default themes
+            //-- are the document's and travel with the header
+            if a.default_theme_material.is_some() || a.default_theme_texture.is_some() {
+                let mut defaults = Appearance::new();
+                defaults.default_theme_material = a.default_theme_material.clone();
+                defaults.default_theme_texture = a.default_theme_texture.clone();
+                cj0.appearance = Some(defaults);
+            }
         }
         Ok(cj0)
     }
@@ -426,6 +435,31 @@ impl Collector {
         let g_offset = doc.vertices.len();
         if let Some(cjf_app) = cjf.appearance.take() {
             let app = doc.appearance.get_or_insert_with(Appearance::new);
+            //-- a feature's default themes are the document's: adopt them if
+            //-- the document has none, and say so if they disagree
+            for (name, mine, theirs) in [
+                (
+                    "appearance.default-theme-material",
+                    &mut app.default_theme_material,
+                    cjf_app.default_theme_material,
+                ),
+                (
+                    "appearance.default-theme-texture",
+                    &mut app.default_theme_texture,
+                    cjf_app.default_theme_texture,
+                ),
+            ] {
+                match (mine.as_ref(), theirs) {
+                    (None, Some(t)) => *mine = Some(t),
+                    (Some(m), Some(t)) if *m != t => {
+                        self.warnings.push(CjseqError::DroppedMember {
+                            feature: cjf.id.clone(),
+                            member: format!("{name} {t:?}"),
+                        })
+                    }
+                    _ => {}
+                }
+            }
             for (i, m) in cjf_app.materials.into_iter().flatten().enumerate() {
                 let all = app.materials.get_or_insert_with(Vec::new);
                 let at = *self.materials.entry(m.key()).or_insert_with(|| {

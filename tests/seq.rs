@@ -251,3 +251,42 @@ fn collecting_reports_each_feature_root_member_it_drops() {
     let doc = c.finish();
     assert!(!doc.other.contains_key("+provenance"));
 }
+
+/// Default themes belong to the document: the header carries them, a
+/// feature's are adopted when the document has none, and one that
+/// disagrees with the document's is dropped with a warning.
+#[test]
+fn default_themes_travel_with_the_header_and_are_reconciled() {
+    let doc = CityJSON::from_str(
+        &json!({"type": "CityJSON", "version": "2.0",
+            "transform": {"scale": [1.0, 1.0, 1.0], "translate": [0.0, 0.0, 0.0]},
+            "CityObjects": {}, "vertices": [],
+            "appearance": {"default-theme-material": "visual", "materials": [{"name": "m"}]}})
+        .to_string(),
+    )
+    .unwrap();
+    let header = doc.header().unwrap();
+    let app = header.appearance.as_ref().unwrap();
+    assert_eq!(app.default_theme_material.as_deref(), Some("visual"));
+    assert!(
+        app.materials.is_none(),
+        "no templates, so no palette in the header"
+    );
+
+    let feature = |theme: &str| {
+        CityJSONFeature::from_str(
+            &json!({"type": "CityJSONFeature", "id": "a", "CityObjects": {"a": {"type": "Building"}},
+                "vertices": [], "appearance": {"default-theme-material": theme, "default-theme-texture": "winter"}})
+            .to_string(),
+        )
+        .unwrap()
+    };
+    let mut c = Collector::new(header);
+    c.add(feature("summer")).unwrap();
+    assert_eq!(c.warnings().len(), 1, "{:?}", c.warnings());
+    assert!(c.warnings()[0].to_string().contains("summer"));
+    let back = c.finish();
+    let app = back.appearance.unwrap();
+    assert_eq!(app.default_theme_material.as_deref(), Some("visual"));
+    assert_eq!(app.default_theme_texture.as_deref(), Some("winter"));
+}

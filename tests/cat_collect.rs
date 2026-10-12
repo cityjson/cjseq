@@ -284,9 +284,21 @@ fn everything() -> CityJSON {
 }
 
 #[test]
-#[ignore = "address locations and default themes are lost; fixed in the next commits"]
 fn a_document_using_everything_survives_cat_and_collect() {
     assert_round_trips(&everything(), "everything()");
+}
+
+/// Without geometry templates the header has no appearance of its own to
+/// carry, so the default themes must still get through.
+#[test]
+fn a_document_without_templates_keeps_its_default_themes() {
+    let mut doc = everything();
+    doc.geometry_templates = None;
+    doc.city_objects.shift_remove("tree");
+    let g = doc.city_objects.get_mut("g").unwrap();
+    g.children = Some(vec!["b2".into()]);
+    g.children_roles = Some(vec![Some("a".into())]);
+    assert_round_trips(&doc, "everything() without templates");
 }
 
 #[test]
