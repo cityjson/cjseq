@@ -156,7 +156,7 @@ impl CityJSON {
             let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
             for g in &mut gts2.templates {
                 g.update_material(&mut m_oldnew);
-                g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
             }
             //-- "slice" materials
             if let Some(a) = &self.appearance {
@@ -196,7 +196,7 @@ impl CityJSON {
             for g in x.iter_mut() {
                 g.update_geometry_boundaries(&mut g_vi_oldnew);
                 g.update_material(&mut m_oldnew);
-                g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
             }
         }
         cjf.add_co(self.sorted_ids[i].clone(), co2);
@@ -210,7 +210,7 @@ impl CityJSON {
                 for g in x.iter_mut() {
                     g.update_geometry_boundaries(&mut g_vi_oldnew);
                     g.update_material(&mut m_oldnew);
-                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
+                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
                 }
             }
             cjf.add_co(childkey.clone(), coc2);
@@ -251,7 +251,6 @@ impl CityJSON {
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
         let g_offset = self.vertices.len();
-        let mut t_offset = 0;
         if let Some(cjf_app) = &cjf.appearance {
             if let Some(cjf_mat) = &cjf_app.materials {
                 for (i, m) in cjf_mat.iter().enumerate() {
@@ -264,7 +263,17 @@ impl CityJSON {
                 }
             }
             if let Some(cjf_v_tex) = &cjf_app.vertices_texture {
-                t_offset = cjf_v_tex.len();
+                //-- the feature's texture vertices are appended verbatim, so
+                //-- each one's new index is its old one shifted by however
+                //-- many were already collected
+                let t_v_offset = self
+                    .appearance
+                    .as_ref()
+                    .and_then(|a| a.vertices_texture.as_ref())
+                    .map_or(0, Vec::len);
+                for i in 0..cjf_v_tex.len() {
+                    t_v_oldnew.insert(i, t_v_offset + i);
+                }
                 self.add_vertices_texture(cjf_v_tex.clone());
             }
         }
@@ -279,7 +288,7 @@ impl CityJSON {
                     //-- material
                     g.update_material(&mut m_oldnew);
                     //-- texture
-                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, t_offset);
+                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
                 }
             }
             //-- update the collected json object by adding the CityObjects

@@ -292,14 +292,14 @@ impl Geometry {
     }
 
     /// Renumber every texture index against `t_oldnew` and every texture
-    /// vertex against `t_v_oldnew`. As with `update_material`, the depth comes
-    /// from the variant, so every geometry that can carry a texture is walked
-    /// the same way.
+    /// vertex against `t_v_oldnew`, both in first-encounter order. An index
+    /// already in a map keeps the value the map gives it, so a caller that
+    /// knows the target numbering up front (as `CityJSON::add_cjfeature`
+    /// does) fills the map first.
     pub(crate) fn update_texture(
         &mut self,
         t_oldnew: &mut HashMap<usize, usize>,
         t_v_oldnew: &mut HashMap<usize, usize>,
-        offset: usize,
     ) {
         let Some(common) = self.common_mut() else {
             return;
@@ -310,19 +310,13 @@ impl Geometry {
         //-- the first index of the innermost array is a texture, the rest are
         //-- texture vertices; they are renumbered against different maps.
         let mut remap = |is_texture: bool, thevalue: usize| -> usize {
-            if is_texture {
-                let l = t_oldnew.len();
-                *t_oldnew.entry(thevalue).or_insert(l)
+            let map = if is_texture {
+                &mut *t_oldnew
             } else {
-                match t_v_oldnew.get(&thevalue) {
-                    Some(y) => *y,
-                    None => {
-                        let l = t_v_oldnew.len();
-                        t_v_oldnew.insert(thevalue, l + offset);
-                        l
-                    }
-                }
-            }
+                &mut *t_v_oldnew
+            };
+            let l = map.len();
+            *map.entry(thevalue).or_insert(l)
         };
         for tex in textures.values_mut() {
             //-- a theme may legally carry no `values` at all
@@ -483,17 +477,11 @@ mod tests {
     }
 
     /// `update_texture` renumbers the first entry of each innermost array
-    /// against the texture map and the rest against the texture-vertex map.
-    ///
-    /// Every expected value below was produced by running the pre-rewrite
-    /// implementation (commit a97bc2d) on this exact input; the test exists to
-    /// prove the rewrite is behaviour-preserving. Note in particular that the
-    /// texture-vertex numbering is asymmetric: the *first* occurrence of a
-    /// vertex is written as `l` while later occurrences are written as the
-    /// stored `l + offset` (see 20 -> 0 then 20 -> 100 below). That is upstream
-    /// behaviour, quirk included, and it is pinned here deliberately.
+    /// against the texture map and the rest against the texture-vertex map,
+    /// both in first-encounter order, and a repeated index maps to the same
+    /// new index every time.
     #[test]
-    fn update_texture_renumbers_textures_and_texture_vertices() {
+    fn update_texture_compacts_textures_and_texture_vertices() {
         let mut g: Geometry = serde_json::from_value(serde_json::json!({
             "type": "MultiSurface", "lod": "2",
             "boundaries": [[[0, 1, 2, 3]], [[4, 5, 6, 7]], [[8, 9, 10, 11]]],
@@ -506,29 +494,39 @@ mod tests {
         .unwrap();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-        g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 100);
+        g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
 
-        //-- `values` is now typed, so compare its serialization: the expected
-        //-- values below are untouched from the oracle run at a97bc2d.
         let values =
             serde_json::to_value(&g.common().unwrap().texture.as_ref().unwrap()["winter"].values)
                 .unwrap();
         assert_eq!(
             values,
-            serde_json::json!([[[0, 0, 1, 2, 100]], [[0, 102, 101, 3, 102]], [[null]]]),
-            "texture values must renumber exactly as the old implementation did"
+            serde_json::json!([[[0, 0, 1, 2, 0]], [[0, 2, 1, 3, 2]], [[null]]])
         );
-
-        let mut t: Vec<(usize, usize)> = t_oldnew.into_iter().collect();
-        t.sort();
-        assert_eq!(t, vec![(5, 0)], "the repeated texture index 5 maps once");
-
         let mut tv: Vec<(usize, usize)> = t_v_oldnew.into_iter().collect();
         tv.sort();
+        assert_eq!(tv, vec![(20, 0), (21, 1), (22, 2), (30, 3)]);
+        let t: Vec<(usize, usize)> = t_oldnew.into_iter().collect();
+        assert_eq!(t, vec![(5, 0)]);
+    }
+
+    /// An index the caller has already mapped keeps that mapping; this is how
+    /// collecting shifts a feature's texture vertices past those already
+    /// collected.
+    #[test]
+    fn update_texture_honours_a_prefilled_map() {
+        let mut g: Geometry = serde_json::from_value(serde_json::json!({
+            "type": "MultiSurface",
+            "boundaries": [[[0, 1, 2]]],
+            "texture": {"t": {"values": [[[0, 2, 0, 1]]]}}
+        }))
+        .unwrap();
+        let mut t_oldnew: HashMap<usize, usize> = HashMap::from([(0, 3)]);
+        let mut t_v_oldnew: HashMap<usize, usize> = (0..3).map(|i| (i, 10 + i)).collect();
+        g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
         assert_eq!(
-            tv,
-            vec![(20, 100), (21, 101), (22, 102), (30, 103)],
-            "texture vertices are stored offset by `offset`"
+            serde_json::to_value(&g).unwrap()["texture"]["t"]["values"],
+            serde_json::json!([[[3, 12, 10, 11]]])
         );
     }
 
