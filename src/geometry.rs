@@ -314,6 +314,20 @@ impl Geometry {
         }
     }
 
+    /// As [`Geometry::for_each_vertex`], read-only.
+    pub(crate) fn visit_vertices(&self, f: &mut dyn FnMut(VertexIndex)) {
+        match self {
+            Geometry::MultiPoint { boundaries, .. } => boundaries.visit_index(f),
+            Geometry::MultiLineString { boundaries, .. } => boundaries.visit_index(f),
+            Geometry::MultiSurface { boundaries, .. }
+            | Geometry::CompositeSurface { boundaries, .. } => boundaries.visit_index(f),
+            Geometry::Solid { boundaries, .. } => boundaries.visit_index(f),
+            Geometry::MultiSolid { boundaries, .. }
+            | Geometry::CompositeSolid { boundaries, .. } => boundaries.visit_index(f),
+            Geometry::GeometryInstance { boundaries, .. } => boundaries.visit_index(f),
+        }
+    }
+
     /// Visit every material index (`value` and `values`, every theme).
     pub(crate) fn for_each_material(&mut self, f: &mut dyn FnMut(&mut MaterialIndex)) {
         match self {

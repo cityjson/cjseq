@@ -63,12 +63,22 @@ impl Indices<TextureIndex> for TexturedRing {
             f(texture)
         }
     }
+    fn visit_index(&self, f: &mut dyn FnMut(TextureIndex)) {
+        if let TexturedRing::Textured { texture, .. } = self {
+            f(*texture)
+        }
+    }
 }
 
 impl Indices<UvIndex> for TexturedRing {
     fn for_each_index(&mut self, f: &mut dyn FnMut(&mut UvIndex)) {
         if let TexturedRing::Textured { uvs, .. } = self {
             uvs.iter_mut().for_each(f)
+        }
+    }
+    fn visit_index(&self, f: &mut dyn FnMut(UvIndex)) {
+        if let TexturedRing::Textured { uvs, .. } = self {
+            uvs.iter().for_each(|uv| f(*uv))
         }
     }
 }
@@ -127,6 +137,10 @@ impl<V: Indices<MaterialIndex>> Indices<MaterialIndex> for MaterialReference<V> 
         self.value.for_each_index(f);
         self.values.for_each_index(f);
     }
+    fn visit_index(&self, f: &mut dyn FnMut(MaterialIndex)) {
+        self.value.visit_index(f);
+        self.values.visit_index(f);
+    }
 }
 
 /// One theme's texture assignment for a geometry.
@@ -148,6 +162,9 @@ pub struct TextureReference<V = Vec<TexturedSurface>> {
 impl<I, V: Indices<I>> Indices<I> for TextureReference<V> {
     fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
         self.values.for_each_index(f);
+    }
+    fn visit_index(&self, f: &mut dyn FnMut(I)) {
+        self.values.visit_index(f);
     }
 }
 

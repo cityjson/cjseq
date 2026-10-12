@@ -36,6 +36,28 @@ pub enum CjseqError {
         /// The id it refers to.
         to: String,
     },
+    /// A parent and a child disagree: one names the other but is not named
+    /// back (`children` vs `parents`).
+    HierarchyMismatch { parent: String, child: String },
+    /// An array of values has a different number of entries than the part
+    /// of the geometry it describes.
+    ValueCount {
+        /// What the values are, eg `"semantics values"`.
+        what: &'static str,
+        /// The number the boundaries call for.
+        expected: usize,
+        found: usize,
+    },
+    /// A CityJSONFeature carries a root member only a CityJSON document may
+    /// carry, eg `transform`.
+    MisplacedMember { member: String },
+    /// An error inside one City Object.
+    InCityObject { id: String, source: Box<CjseqError> },
+    /// An error inside one geometry template.
+    InTemplate {
+        index: usize,
+        source: Box<CjseqError>,
+    },
     /// An index points past the end of the array it indexes.
     IndexOutOfRange {
         kind: IndexKind,
@@ -74,6 +96,23 @@ impl fmt::Display for CjseqError {
                 f,
                 "City Object {from:?} refers to {to:?}, which is not in the document"
             ),
+            CjseqError::HierarchyMismatch { parent, child } => write!(
+                f,
+                "City Objects {parent:?} and {child:?} disagree on whether one is the other's parent"
+            ),
+            CjseqError::ValueCount {
+                what,
+                expected,
+                found,
+            } => write!(f, "{found} {what} where the boundaries call for {expected}"),
+            CjseqError::MisplacedMember { member } => write!(
+                f,
+                "a CityJSONFeature cannot carry {member:?}; only the CityJSON document can"
+            ),
+            CjseqError::InCityObject { id, source } => write!(f, "in City Object {id:?}: {source}"),
+            CjseqError::InTemplate { index, source } => {
+                write!(f, "in geometry template {index}: {source}")
+            }
             CjseqError::IndexOutOfRange { kind, index, len } => {
                 write!(f, "{kind:?} index {index} is out of range (there are {len})")
             }
@@ -87,8 +126,14 @@ impl std::error::Error for CjseqError {
             CjseqError::Json(e) => Some(e),
             CjseqError::GeometryDepth { .. } => None,
             CjseqError::Io(e) => Some(e),
+            CjseqError::InCityObject { source, .. } | CjseqError::InTemplate { source, .. } => {
+                Some(source.as_ref())
+            }
             CjseqError::Validation(_)
             | CjseqError::DanglingReference { .. }
+            | CjseqError::HierarchyMismatch { .. }
+            | CjseqError::ValueCount { .. }
+            | CjseqError::MisplacedMember { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
     }

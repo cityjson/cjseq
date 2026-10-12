@@ -149,8 +149,11 @@ impl CityJSON {
             transform_correction: None,
         }
     }
-    /// Get the "first line" (aka metadata or header) of a CityJSONSeq
-    pub fn get_metadata(&self) -> Self {
+    /// Get the "first line" (aka metadata or header) of a CityJSONSeq: the
+    /// document without its City Objects and vertices, its appearance cut
+    /// down to what the geometry templates use. An appearance index in a
+    /// template that is out of range is an error.
+    pub fn get_metadata(&self) -> Result<Self> {
         let mut cj0 = CityJSON {
             thetype: self.thetype.clone(),
             version: self.version,
@@ -177,10 +180,12 @@ impl CityJSON {
                 g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
             }
             if let Some(a) = &self.appearance {
-                cj0.appearance = slice_appearance(a, &m_oldnew, &t_oldnew, &t_v_oldnew).ok();
+                cj0.appearance = Some(slice_appearance(a, &m_oldnew, &t_oldnew, &t_v_oldnew)?);
             }
+            //-- the templates now index the sliced appearance
+            cj0.geometry_templates = Some(gts2);
         }
-        cj0
+        Ok(cj0)
     }
 
     /// The `i`th feature, in the order set by [`CityJSON::sort_cjfeatures`]:

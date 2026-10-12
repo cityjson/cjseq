@@ -193,6 +193,13 @@ impl<V: Indices<SurfaceIndex>> Indices<SurfaceIndex> for Semantics<V> {
         }
         self.values.for_each_index(f);
     }
+    fn visit_index(&self, f: &mut dyn FnMut(SurfaceIndex)) {
+        for s in &self.surfaces {
+            s.parent.visit_index(f);
+            s.children.visit_index(f);
+        }
+        self.values.visit_index(f);
+    }
 }
 
 #[cfg(test)]

@@ -76,6 +76,7 @@ fn collecting_several_textured_features_keeps_every_uv() {
     let c = feature("c", &a_uvs, &[[2, 1, 0]]);
 
     let cj = cjseq_to_cj(header(), vec![a, b, c]);
+    cj.validate().unwrap();
 
     assert_eq!(
         resolved_uvs(&cj, "a"),
@@ -129,7 +130,8 @@ fn a_cat_then_collect_round_trip_keeps_every_uv() {
     while let Some(f) = doc.get_cjfeature(features.len()).unwrap() {
         features.push(f);
     }
-    let back = cjseq_to_cj(doc.get_metadata(), features);
+    let back = cjseq_to_cj(doc.get_metadata().unwrap(), features);
+    back.validate().unwrap();
 
     assert_eq!(resolved_uvs(&back, "a"), expected_a);
     assert_eq!(resolved_uvs(&back, "b"), expected_b);

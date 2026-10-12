@@ -27,6 +27,9 @@ macro_rules! index_type {
             fn for_each_index(&mut self, f: &mut dyn FnMut(&mut $name)) {
                 f(self)
             }
+            fn visit_index(&self, f: &mut dyn FnMut($name)) {
+                f(*self)
+            }
         }
 
         impl Index for $name {
@@ -89,12 +92,18 @@ pub type MultiSolidValues<I> = Vec<Option<SolidValues<I>>>;
 /// that nest them, so a value of any depth is walked the same way.
 pub(crate) trait Indices<I> {
     fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I));
+    fn visit_index(&self, f: &mut dyn FnMut(I));
 }
 
 impl<I, T: Indices<I>> Indices<I> for Vec<T> {
     fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
         for t in self {
             t.for_each_index(f);
+        }
+    }
+    fn visit_index(&self, f: &mut dyn FnMut(I)) {
+        for t in self {
+            t.visit_index(f);
         }
     }
 }
@@ -105,6 +114,11 @@ impl<I, T: Indices<I>, const N: usize> Indices<I> for [T; N] {
             t.for_each_index(f);
         }
     }
+    fn visit_index(&self, f: &mut dyn FnMut(I)) {
+        for t in self {
+            t.visit_index(f);
+        }
+    }
 }
 
 impl<I, T: Indices<I>> Indices<I> for Option<T> {
@@ -113,12 +127,22 @@ impl<I, T: Indices<I>> Indices<I> for Option<T> {
             t.for_each_index(f);
         }
     }
+    fn visit_index(&self, f: &mut dyn FnMut(I)) {
+        if let Some(t) = self {
+            t.visit_index(f);
+        }
+    }
 }
 
 impl<I, T: Indices<I>> Indices<I> for indexmap::IndexMap<String, T> {
     fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
         for t in self.values_mut() {
             t.for_each_index(f);
+        }
+    }
+    fn visit_index(&self, f: &mut dyn FnMut(I)) {
+        for t in self.values() {
+            t.visit_index(f);
         }
     }
 }

@@ -58,7 +58,7 @@ fn basic_reading_of_cj() {
     let mut cjj: CityJSON = CityJSON::from_str(&json_content).unwrap();
     assert!(cjj.number_of_city_objects() == 2);
 
-    let cj1 = cjj.get_metadata();
+    let cj1 = cjj.get_metadata().unwrap();
     assert!(cj1.number_of_city_objects() == 0);
     assert!(cj1.vertices.is_empty());
 

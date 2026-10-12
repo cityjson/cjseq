@@ -361,7 +361,7 @@ fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
     }
     cjj.sort_cjfeatures(order);
     //-- first line: the CityJSON "metadata"
-    let cj1 = cjj.get_metadata();
+    let cj1 = cjj.get_metadata()?;
     io::stdout().write_all(format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
     //-- the other lines for each CityJSONSeq
     let mut i: usize = 0;

@@ -25,6 +25,7 @@ mod geometry;
 mod index;
 mod metadata;
 mod semantics;
+mod validate;
 
 pub use appearance::*;
 pub use city_object::*;
