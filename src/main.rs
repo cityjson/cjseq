@@ -5,6 +5,7 @@ use cjseq::CityJSONType;
 use cjseq::CityObjectType;
 use cjseq::CjseqError;
 use cjseq::Transform;
+use std::str::FromStr;
 
 extern crate clap;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -15,7 +16,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(version, about = "Create/process/modify CityJSONSeq files", long_about = None)]
@@ -162,14 +163,14 @@ fn filter_random(exclude: bool, rand_factor: u32) -> Result<()> {
         if let Ok(l) = line {
             let j: Value = serde_json::from_str(&l)?;
             if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
             } else {
                 let r: u32 = rng.gen_range(1..=rand_factor);
                 if r == 1 {
                     w = true;
                 }
-                if (w == true && !exclude) || (w == false && exclude) {
-                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                if (w && !exclude) || (!w && exclude) {
+                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
                 }
             }
         }
@@ -189,14 +190,14 @@ fn filter_cotype(exclude: bool, cotype: String) -> Result<()> {
         if let Ok(l) = line {
             let j: Value = serde_json::from_str(&l)?;
             if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
             } else {
                 let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
                 if cjf.city_objects[&cjf.id].get_type() == cotype {
                     w = true;
                 }
-                if (w == true && !exclude) || (w == false && exclude) {
-                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                if (w && !exclude) || (!w && exclude) {
+                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
                 }
             }
         }
@@ -205,7 +206,7 @@ fn filter_cotype(exclude: bool, cotype: String) -> Result<()> {
     Ok(())
 }
 
-fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<()> {
+fn filter_bbox(exclude: bool, bbox: &[f64]) -> Result<()> {
     let stdin = std::io::stdin();
     let mut cj: CityJSON = CityJSON::new();
     for line in stdin.lock().lines() {
@@ -213,7 +214,7 @@ fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<()> {
         if let Ok(l) = line {
             let j: Value = serde_json::from_str(&l)?;
             if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
                 cj = CityJSON::from_str(&l)?;
             } else {
                 let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
@@ -223,8 +224,8 @@ fn filter_bbox(exclude: bool, bbox: &Vec<f64>) -> Result<()> {
                 if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
                     w = true;
                 }
-                if (w == true && !exclude) || (w == false && exclude) {
-                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                if (w && !exclude) || (!w && exclude) {
+                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
                 }
             }
         }
@@ -240,7 +241,7 @@ fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<()> {
         if let Ok(l) = line {
             let j: Value = serde_json::from_str(&l)?;
             if j.get("type").unwrap() == "CityJSON" {
-                io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                io::stdout().write_all(format!("{}\n", l).as_bytes())?;
                 cj = CityJSON::from_str(&l)?;
             } else {
                 let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
@@ -251,8 +252,8 @@ fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<()> {
                 if d2 <= (r * r) {
                     w = true;
                 }
-                if (w == true && !exclude) || (w == false && exclude) {
-                    io::stdout().write_all(&format!("{}\n", l).as_bytes())?;
+                if (w && !exclude) || (!w && exclude) {
+                    io::stdout().write_all(format!("{}\n", l).as_bytes())?;
                 }
             }
         }
@@ -264,31 +265,29 @@ fn collect_from_stdin() -> Result<()> {
     let stdin = std::io::stdin();
     let mut cjj = CityJSON::new();
     let mut cjj_init: bool = false;
-    for line in stdin.lock().lines() {
-        if let Ok(json_line) = line {
-            let j: Value = serde_json::from_str(&json_line)?;
-            if j.get("type").unwrap() == "CityJSON" {
-                if cjj_init == false {
-                    cjj = CityJSON::from_str(&json_line)?;
-                    cjj_init = true;
-                } else {
-                    let t: Transform = serde_json::from_value(j.get("transform").unwrap().clone())?;
-                    cjj.add_transform_correction(t);
-                }
+    for json_line in stdin.lock().lines().map_while(std::result::Result::ok) {
+        let j: Value = serde_json::from_str(&json_line)?;
+        if j.get("type").unwrap() == "CityJSON" {
+            if !cjj_init {
+                cjj = CityJSON::from_str(&json_line)?;
+                cjj_init = true;
             } else {
-                let mut cjf = CityJSONFeature::from_str(&json_line)?;
-                cjj.add_cjfeature(&mut cjf);
+                let t: Transform = serde_json::from_value(j.get("transform").unwrap().clone())?;
+                cjj.add_transform_correction(t);
             }
+        } else {
+            let mut cjf = CityJSONFeature::from_str(&json_line)?;
+            cjj.add_cjfeature(&mut cjf);
         }
     }
     cjj.remove_duplicate_vertices();
     cjj.update_transform();
     cjj.update_geographicalextent();
-    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
+    io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }
 
-fn collect_from_files(files: &Vec<String>) -> Result<()> {
+fn collect_from_files(files: &[String]) -> Result<()> {
     let mut cjj = CityJSON::new();
     let mut cjj_init: bool = false;
     for file in files {
@@ -299,16 +298,16 @@ fn collect_from_files(files: &Vec<String>) -> Result<()> {
             match &line {
                 Ok(l) => {
                     if i == 0 {
-                        if cjj_init == false {
-                            cjj = CityJSON::from_str(&l)?;
+                        if !cjj_init {
+                            cjj = CityJSON::from_str(l)?;
                             cjj_init = true;
                         } else {
-                            let cjj2 = CityJSON::from_str(&l)?;
+                            let cjj2 = CityJSON::from_str(l)?;
                             let t: Transform = cjj2.transform;
                             cjj.add_transform_correction(t);
                         }
                     } else {
-                        let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
+                        let mut cjf: CityJSONFeature = CityJSONFeature::from_str(l)?;
                         cjj.add_cjfeature(&mut cjf);
                     }
                 }
@@ -319,7 +318,7 @@ fn collect_from_files(files: &Vec<String>) -> Result<()> {
     cjj.remove_duplicate_vertices();
     cjj.update_transform();
     cjj.update_geographicalextent();
-    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
+    io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjj).unwrap()).as_bytes())?;
     Ok(())
 }
 
@@ -328,7 +327,7 @@ fn cat_from_stdin(order: cjseq::SortingStrategy) -> Result<()> {
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => {
             let mut cjj: CityJSON = CityJSON::from_str(&input)?;
-            let _ = cat(&mut cjj, order)?;
+            cat(&mut cjj, order)?;
         }
         Err(error) => {
             eprintln!("Error: {}", error);
@@ -337,7 +336,7 @@ fn cat_from_stdin(order: cjseq::SortingStrategy) -> Result<()> {
     Ok(())
 }
 
-fn cat_from_file(file: &PathBuf, order: cjseq::SortingStrategy) -> Result<()> {
+fn cat_from_file(file: &Path, order: cjseq::SortingStrategy) -> Result<()> {
     let f = File::open(file.canonicalize()?)?;
     let mut br = BufReader::new(f);
     let mut json_content = String::new();
@@ -361,13 +360,12 @@ fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
     cjj.sort_cjfeatures(order);
     //-- first line: the CityJSON "metadata"
     let cj1 = cjj.get_metadata();
-    io::stdout().write_all(&format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
+    io::stdout().write_all(format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
     //-- the other lines for each CityJSONSeq
     let mut i: usize = 0;
     while let Some(cjf) = cjj.get_cjfeature(i) {
         i += 1;
-        io::stdout()
-            .write_all(&format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
+        io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
     }
     Ok(())
 }

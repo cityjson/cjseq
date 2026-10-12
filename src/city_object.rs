@@ -233,25 +233,16 @@ impl CityObject {
     }
     pub(crate) fn is_toplevel(&self) -> bool {
         match &self.parents {
-            Some(x) => {
-                if x.is_empty() {
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-            None => return true,
+            Some(x) => x.is_empty(),
+            None => true,
         }
     }
     pub(crate) fn get_children_keys(&self) -> Vec<String> {
         let mut re: Vec<String> = Vec::new();
-        match &self.children {
-            Some(x) => {
-                for each in x {
-                    re.push(each.to_string());
-                }
+        if let Some(x) = &self.children {
+            for each in x {
+                re.push(each.to_string());
             }
-            None => (),
         }
         re
     }

@@ -1,11 +1,12 @@
 use crate::appearance::{Appearance, MaterialObject, TextureObject};
 use crate::city_object::CityObject;
-use crate::error::Result;
+use crate::error::{CjseqError, Result};
 use crate::geometry::GeometryTemplates;
 use crate::metadata::{Metadata, Transform};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 /// Slice a document-level appearance palette down to the entries one feature
 /// uses, in the order that feature now refers to them.
@@ -86,6 +87,27 @@ impl PartialEq for CityJSON {
     }
 }
 
+impl Default for CityJSON {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FromStr for CityJSON {
+    type Err = CjseqError;
+    /// Parse a CityJSON document.
+    fn from_str(s: &str) -> Result<Self> {
+        let mut cjj: CityJSON = serde_json::from_str(s)?;
+        //-- check if CO exists, then add them to the sorted_ids
+        for (key, co) in &cjj.city_objects {
+            if co.is_toplevel() {
+                cjj.sorted_ids.push(key.clone());
+            }
+        }
+        Ok(cjj)
+    }
+}
+
 impl CityJSON {
     /// Create a new CityJSON instance with default values.
     pub fn new() -> Self {
@@ -107,18 +129,6 @@ impl CityJSON {
             transform_correction: None,
         }
     }
-    /// Create a new CityJSON instance from a string.
-    pub fn from_str(s: &str) -> Result<Self> {
-        let mut cjj: CityJSON = serde_json::from_str(s)?;
-        //-- check if CO exists, then add them to the sorted_ids
-        for (key, co) in &cjj.city_objects {
-            if co.is_toplevel() {
-                cjj.sorted_ids.push(key.clone());
-            }
-        }
-        Ok(cjj)
-    }
-
     /// Get the "first line" (aka metadata or header) of a CityJSONSeq
     pub fn get_metadata(&self) -> Self {
         let co: HashMap<String, CityObject> = HashMap::new();
@@ -139,35 +149,31 @@ impl CityJSON {
         };
         //-- if geometry-templates have material/textures then these need to be
         //-- added to 1st line (metadata)
-        match &self.geometry_templates {
-            Some(x) => {
-                let mut gts2: GeometryTemplates = x.clone();
-                let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
-                let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
-                let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-                for g in &mut gts2.templates {
-                    g.update_material(&mut m_oldnew);
-                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
-                }
-                //-- "slice" materials
-                if self.appearance.is_some() {
-                    let a = self.appearance.as_ref().unwrap();
-                    let mut acjf: Appearance = Appearance::new();
-                    acjf.default_theme_material = a.default_theme_material.clone();
-                    acjf.default_theme_texture = a.default_theme_texture.clone();
-                    if let Some(am) = a.materials.as_ref() {
-                        acjf.materials = Some(reindex(am, &m_oldnew));
-                    }
-                    if let Some(at) = a.textures.as_ref() {
-                        acjf.textures = Some(reindex(at, &t_oldnew));
-                    }
-                    if let Some(atv) = a.vertices_texture.as_ref() {
-                        acjf.vertices_texture = Some(reindex(atv, &t_v_oldnew));
-                    }
-                    cj0.appearance = Some(acjf);
-                }
+        if let Some(x) = &self.geometry_templates {
+            let mut gts2: GeometryTemplates = x.clone();
+            let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
+            let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
+            for g in &mut gts2.templates {
+                g.update_material(&mut m_oldnew);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
             }
-            None => (),
+            //-- "slice" materials
+            if let Some(a) = &self.appearance {
+                let mut acjf: Appearance = Appearance::new();
+                acjf.default_theme_material = a.default_theme_material.clone();
+                acjf.default_theme_texture = a.default_theme_texture.clone();
+                if let Some(am) = a.materials.as_ref() {
+                    acjf.materials = Some(reindex(am, &m_oldnew));
+                }
+                if let Some(at) = a.textures.as_ref() {
+                    acjf.textures = Some(reindex(at, &t_oldnew));
+                }
+                if let Some(atv) = a.vertices_texture.as_ref() {
+                    acjf.vertices_texture = Some(reindex(atv, &t_v_oldnew));
+                }
+                cj0.appearance = Some(acjf);
+            }
         }
         cj0
     }
@@ -175,13 +181,9 @@ impl CityJSON {
     /// Starts at 0, and return Option::None if the index is out of bounds.
     pub fn get_cjfeature(&self, i: usize) -> Option<CityJSONFeature> {
         let i2 = self.sorted_ids.get(i);
-        if i2.is_none() {
-            return None;
-        }
+        i2?;
         let obj = self.city_objects.get(i2.unwrap());
-        if obj.is_none() {
-            return None;
-        }
+        obj?;
         let co = obj.unwrap();
         //-- the other lines
         let mut cjf = CityJSONFeature::new();
@@ -190,15 +192,12 @@ impl CityJSON {
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-        match &mut co2.geometry {
-            Some(x) => {
-                for g in x.iter_mut() {
-                    g.update_geometry_boundaries(&mut g_vi_oldnew);
-                    g.update_material(&mut m_oldnew);
-                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
-                }
+        if let Some(x) = &mut co2.geometry {
+            for g in x.iter_mut() {
+                g.update_geometry_boundaries(&mut g_vi_oldnew);
+                g.update_material(&mut m_oldnew);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
             }
-            None => (),
         }
         cjf.add_co(self.sorted_ids[i].clone(), co2);
         cjf.id = self.sorted_ids[i].to_string();
@@ -207,15 +206,12 @@ impl CityJSON {
         for childkey in co.get_children_keys() {
             let coc = self.city_objects.get(&childkey).unwrap();
             let mut coc2: CityObject = coc.clone();
-            match &mut coc2.geometry {
-                Some(x) => {
-                    for g in x.iter_mut() {
-                        g.update_geometry_boundaries(&mut g_vi_oldnew);
-                        g.update_material(&mut m_oldnew);
-                        g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
-                    }
+            if let Some(x) = &mut coc2.geometry {
+                for g in x.iter_mut() {
+                    g.update_geometry_boundaries(&mut g_vi_oldnew);
+                    g.update_material(&mut m_oldnew);
+                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew, 0);
                 }
-                None => (),
             }
             cjf.add_co(childkey.clone(), coc2);
         }
@@ -228,8 +224,7 @@ impl CityJSON {
         }
         cjf.vertices = g_new_vertices;
         //-- "slice" materials
-        if self.appearance.is_some() {
-            let a = self.appearance.as_ref().unwrap();
+        if let Some(a) = &self.appearance {
             let mut acjf: Appearance = Appearance::new();
             acjf.default_theme_material = a.default_theme_material.clone();
             acjf.default_theme_texture = a.default_theme_texture.clone();
@@ -317,13 +312,10 @@ impl CityJSON {
         //-- update indices
         let cos = &mut self.city_objects;
         for (_key, co) in cos.iter_mut() {
-            match &mut co.geometry {
-                Some(x) => {
-                    for g in x.iter_mut() {
-                        g.update_geometry_boundaries(&mut newids);
-                    }
+            if let Some(x) = &mut co.geometry {
+                for g in x.iter_mut() {
+                    g.update_geometry_boundaries(&mut newids);
                 }
-                None => (),
             }
         }
         //-- replace the vertices, innit?
@@ -381,7 +373,7 @@ impl CityJSON {
     }
     pub fn number_of_city_objects(&self) -> usize {
         let mut total: usize = 0;
-        for (_key, co) in &self.city_objects {
+        for co in self.city_objects.values() {
             if co.is_toplevel() {
                 total += 1;
             }
@@ -415,11 +407,8 @@ impl CityJSON {
         self.city_objects.insert(id.clone(), co);
     }
     fn add_vertices(&mut self, vs: &mut Vec<Vec<i64>>) {
-        if self.transform_correction.is_none() {
-            self.vertices.append(vs);
-        } else {
-            //-- the transfrom correction needs to be applied
-            let c = self.transform_correction.as_ref().unwrap();
+        if let Some(c) = &self.transform_correction {
+            //-- the transform correction needs to be applied
             for v in vs {
                 let cx: i64 = (((v[0] as f64 * c.scale[0]) + c.translate[0]
                     - self.transform.translate[0])
@@ -435,6 +424,8 @@ impl CityJSON {
                     .round() as i64;
                 self.vertices.push(vec![cx, cy, cz]);
             }
+        } else {
+            self.vertices.append(vs);
         }
     }
     fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
@@ -448,7 +439,7 @@ impl CityJSON {
         };
     }
     fn add_material(&mut self, jm: MaterialObject) -> usize {
-        let re = match &mut self.appearance {
+        match &mut self.appearance {
             Some(x) => x.add_material(jm),
             None => {
                 let mut a: Appearance = Appearance::new();
@@ -456,11 +447,10 @@ impl CityJSON {
                 self.appearance = Some(a);
                 re
             }
-        };
-        re
+        }
     }
     fn add_texture(&mut self, jm: TextureObject) -> usize {
-        let re = match &mut self.appearance {
+        match &mut self.appearance {
             Some(x) => x.add_texture(jm),
             None => {
                 let mut a: Appearance = Appearance::new();
@@ -468,8 +458,7 @@ impl CityJSON {
                 self.appearance = Some(a);
                 re
             }
-        };
-        re
+        }
     }
 }
 
@@ -484,6 +473,21 @@ pub struct CityJSONFeature {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
 }
+
+impl Default for CityJSONFeature {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FromStr for CityJSONFeature {
+    type Err = CjseqError;
+    /// Parse one CityJSONFeature (one line of a CityJSONSeq).
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(serde_json::from_str(s)?)
+    }
+}
+
 impl CityJSONFeature {
     pub fn new() -> Self {
         let co: HashMap<String, CityObject> = HashMap::new();
@@ -496,24 +500,20 @@ impl CityJSONFeature {
             appearance: None,
         }
     }
-    pub fn from_str(s: &str) -> Result<Self> {
-        let cjf: CityJSONFeature = serde_json::from_str(s)?;
-        Ok(cjf)
-    }
     pub fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id, co);
     }
     pub fn centroid(&self) -> Vec<f64> {
         let mut totals: Vec<f64> = vec![0., 0., 0.];
         for v in &self.vertices {
-            for i in 0..3 {
-                totals[i] += v[i] as f64;
+            for (t, c) in totals.iter_mut().zip(v) {
+                *t += *c as f64;
             }
         }
-        for i in 0..3 {
-            totals[i] /= self.vertices.len() as f64;
+        for t in &mut totals {
+            *t /= self.vertices.len() as f64;
         }
-        return totals;
+        totals
     }
 }
 

@@ -17,6 +17,7 @@
 use cjseq::{CityJSON, CityJSONFeature};
 use serde_json::{Number, Value};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 /// Do two JSON numbers denote the same value?
 ///

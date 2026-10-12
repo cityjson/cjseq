@@ -1,5 +1,5 @@
-use crate::cjseq::CityJSON;
-use cjseq;
+use cjseq::CityJSON;
+use std::str::FromStr;
 
 use serde_json::Value;
 use std::fs::File;
@@ -37,8 +37,8 @@ fn get_empty_file() -> Value {
           }
         }
         "#;
-    let v = serde_json::from_str(&j_1).unwrap();
-    v
+
+    serde_json::from_str(j_1).unwrap()
 }
 
 #[test]

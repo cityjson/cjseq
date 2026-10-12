@@ -1,8 +1,9 @@
-name: Cargo Check
+name: CI
 on:
   push:
     branches:
       - main
+      - develop
   pull_request:
 jobs:
   check:
@@ -10,12 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - name: Run fmt
         run: cargo fmt -- --check
       - name: Run clippy
-        run: cargo clippy
-      - name: Run check
-        run: cargo check
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test
+      - name: Build wasm
+        run: cargo build --target wasm32-unknown-unknown --features wasm

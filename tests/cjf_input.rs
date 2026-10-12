@@ -1,6 +1,6 @@
-use crate::cjseq::{CityJSON, CityJSONFeature};
-use cjseq;
+use cjseq::{CityJSON, CityJSONFeature};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use std::fs::File;
 use std::io::BufRead;
@@ -16,12 +16,12 @@ fn test1() {
         match &line {
             Ok(l) => {
                 if i == 0 {
-                    cjj = CityJSON::from_str(&l).unwrap();
+                    cjj = CityJSON::from_str(l).unwrap();
                     assert!(cjj.number_of_city_objects() == 0);
                     assert!(cjj.get_cjfeature(0).is_none());
-                    assert_eq!(cjj.vertices.is_empty(), true);
+                    assert!(cjj.vertices.is_empty());
                 } else {
-                    let mut cjf: CityJSONFeature = CityJSONFeature::from_str(&l).unwrap();
+                    let mut cjf: CityJSONFeature = CityJSONFeature::from_str(l).unwrap();
                     cjj.add_cjfeature(&mut cjf);
                     assert_eq!(cjj.number_of_city_objects(), i);
                 }
