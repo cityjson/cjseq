@@ -647,12 +647,22 @@ impl Collector {
     /// later header changed the transform) and its appearance, merged into
     /// the document's palettes. Root members the feature schema allows but
     /// does not name are dropped, each with a [`Collector::warnings`] entry.
+    ///
+    /// A City Object id already collected from an earlier feature is a
+    /// [`CjseqError::DuplicateId`], and nothing of the feature is added.
     pub fn add(&mut self, mut cjf: CityJSONFeature) -> Result<()> {
         if !cjf.city_objects.contains_key(&cjf.id) {
             return Err(CjseqError::DanglingReference {
                 from: "CityJSONFeature.id".to_string(),
                 to: cjf.id,
             });
+        }
+        if let Some(id) = cjf
+            .city_objects
+            .keys()
+            .find(|id| self.doc.city_objects.contains_key(*id))
+        {
+            return Err(CjseqError::DuplicateId { id: id.clone() });
         }
         self.check_indices(&mut cjf)?;
         for member in cjf.other.keys() {

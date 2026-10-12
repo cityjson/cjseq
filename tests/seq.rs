@@ -496,3 +496,31 @@ fn collecting_rejects_a_feature_whose_indices_point_past_its_own_data() {
         }
     }
 }
+
+/// City Object ids are unique in a document, so two features carrying the
+/// same id cannot both be collected: the second is an error, not a silent
+/// overwrite of the first.
+#[test]
+fn collecting_rejects_a_city_object_id_seen_in_an_earlier_feature() {
+    let (header, _) = read("tests/data/small.city.jsonl");
+    let f = |id: &str, part: &str| {
+        CityJSONFeature::from_str(
+            &json!({"type": "CityJSONFeature", "id": id,
+                "CityObjects": {id: {"type": "Building", "children": [part]},
+                                part: {"type": "BuildingPart", "parents": [id]}},
+                "vertices": []})
+            .to_string(),
+        )
+        .unwrap()
+    };
+    let mut c = Collector::new(header);
+    c.add(f("a", "p")).unwrap();
+    match c.add(f("b", "p")) {
+        Err(CjseqError::DuplicateId { id }) => assert_eq!(id, "p"),
+        other => panic!("expected DuplicateId, got {other:?}"),
+    }
+    //-- the rejected feature left nothing behind
+    let doc = c.finish();
+    assert!(!doc.city_objects.contains_key("b"));
+    assert_eq!(doc.city_objects["p"].parents, Some(vec!["a".to_string()]));
+}

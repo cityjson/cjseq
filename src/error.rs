@@ -58,6 +58,9 @@ pub enum CjseqError {
     /// differed from the document's. Reported by
     /// [`crate::Collector::warnings`].
     DroppedHeaderMember { member: String },
+    /// A City Object id that is already in the document, met again while
+    /// collecting.
+    DuplicateId { id: String },
     /// A name or version does not match the pattern the schema gives it.
     Pattern {
         /// What the value is, eg `"Extension City Object type"`.
@@ -149,6 +152,9 @@ impl fmt::Display for CjseqError {
                 f,
                 "dropped {member:?} of a later sequence's header, which differs from the first"
             ),
+            CjseqError::DuplicateId { id } => {
+                write!(f, "City Object {id:?} is in more than one feature")
+            }
             CjseqError::Pattern {
                 what,
                 value,
@@ -189,6 +195,7 @@ impl std::error::Error for CjseqError {
             | CjseqError::DroppedMember { .. }
             | CjseqError::NotInAnyFeature { .. }
             | CjseqError::HeaderMismatch { .. }
+            | CjseqError::DuplicateId { .. }
             | CjseqError::DroppedHeaderMember { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
