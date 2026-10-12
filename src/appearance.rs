@@ -54,10 +54,53 @@ impl MaterialValues {
     }
 }
 
-/// One ring's texture entry: the texture index first, then one UV-vertex
-/// index per vertex of the ring — so one entry more than the ring has
-/// vertices. `[null]` means the ring is not textured.
-pub type TexturedRing = Vec<Option<usize>>;
+/// One ring's texture entry. In JSON it is `[texture, uv, uv, ...]` -- the
+/// texture index first, then one texture-vertex index per vertex of the ring
+/// -- or `[null]` for a ring with no texture.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(try_from = "Vec<Option<usize>>", into = "Vec<Option<usize>>")]
+pub enum TexturedRing {
+    /// `[null]`
+    Untextured,
+    /// `[texture, uvs...]`
+    Textured { texture: usize, uvs: Vec<usize> },
+}
+
+impl TryFrom<Vec<Option<usize>>> for TexturedRing {
+    type Error = crate::error::CjseqError;
+    fn try_from(v: Vec<Option<usize>>) -> crate::error::Result<Self> {
+        match v.split_first() {
+            Some((None, [])) => Ok(TexturedRing::Untextured),
+            Some((Some(texture), rest)) if !rest.is_empty() => Ok(TexturedRing::Textured {
+                texture: *texture,
+                uvs: rest
+                    .iter()
+                    .map(|uv| {
+                        uv.ok_or_else(|| {
+                            crate::error::CjseqError::Validation(
+                                "a textured ring has a null texture-vertex index".to_string(),
+                            )
+                        })
+                    })
+                    .collect::<crate::error::Result<_>>()?,
+            }),
+            _ => Err(crate::error::CjseqError::Validation(format!(
+                "{v:?} is not a texture ring: expected [null] or [texture, uv, ...]"
+            ))),
+        }
+    }
+}
+
+impl From<TexturedRing> for Vec<Option<usize>> {
+    fn from(r: TexturedRing) -> Self {
+        match r {
+            TexturedRing::Untextured => vec![None],
+            TexturedRing::Textured { texture, uvs } => std::iter::once(Some(texture))
+                .chain(uvs.into_iter().map(Some))
+                .collect(),
+        }
+    }
+}
 /// One face's rings, exterior first, mirroring [`crate::Surface`].
 pub type TexturedSurface = Vec<TexturedRing>;
 /// One volume's bounding faces, mirroring [`crate::Shell`].

@@ -6,8 +6,7 @@ use serde_json::{Map, Value};
 /// The known 1st- and 2nd-level City Object types (§ 2 The different City
 /// Objects). Every variant is a unit variant and every identifier is already
 /// spelled exactly as the spec requires (eg `TINRelief`, `WaterBody`,
-/// `CityFurniture`), so serde's default (non-untagged) derive collapses each
-/// one to its bare name string with no `#[serde(rename)]` needed.
+/// `CityFurniture`), so each serializes as its bare name.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KnownCityObjectType {
     Bridge,
@@ -53,18 +52,10 @@ pub enum KnownCityObjectType {
 /// carries that string verbatim so a file using an Extension (eg
 /// `"+NoiseCityFurnitureSegment"`) round-trips byte for byte.
 ///
-/// This is `#[serde(untagged)]` over a *nested* known-variants enum, not a
-/// single flat enum mixing unit variants with `Extension(String)` directly:
-/// under `#[serde(untagged)]`, a bare unit variant (de)serializes as JSON
-/// `null`, not its name (this is a documented serde quirk -- untagged
-/// dispatch tries each variant's own `Deserialize` standalone, and a unit
-/// variant's is `deserialize_unit`, which only accepts `null`). A flat
-/// mixed enum was tried and empirically failed this exact way: every known
-/// name fell through to `Extension` because none of the unit variants ever
-/// matched a JSON string. Nesting the known names inside their own
-/// unit-only enum sidesteps this, because *that* enum, derived without
-/// `#[serde(untagged)]`, gets the ordinary external-tagging collapse (a
-/// unit-only enum's tag+content is just the bare name string).
+/// In JSON it is a plain string, converted through `TryFrom<String>`: a
+/// string that is neither a known name nor `+` followed by a name is an
+/// error, so a misspelt core type (`"Buildng"`) does not pass as an
+/// Extension.
 ///
 /// # Match on the value, not on a reference
 ///
@@ -94,7 +85,7 @@ pub enum KnownCityObjectType {
 /// exhaustive over just the known names, since `Known` and `Extension` are
 /// the real variants.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-#[serde(untagged)]
+#[serde(try_from = "String", into = "String")]
 pub enum CityObjectType {
     Known(KnownCityObjectType),
     /// Not a core CityJSON type: a CityJSON Extension type, always spelled
@@ -112,6 +103,35 @@ pub enum CityObjectType {
 /// but only when matching on a *value*. See
 /// [`CityObjectType`][CityObjectType#match-on-the-value-not-on-a-reference]
 /// for why that matters and how it fails silently otherwise.
+impl TryFrom<String> for CityObjectType {
+    type Error = crate::error::CjseqError;
+    /// A known name, or an Extension name: `+` followed by at least one
+    /// character. Anything else -- a misspelt core type, say -- is an error.
+    fn try_from(s: String) -> crate::error::Result<Self> {
+        if let Ok(k) = serde_json::from_value::<KnownCityObjectType>(Value::String(s.clone())) {
+            return Ok(CityObjectType::Known(k));
+        }
+        if s.len() > 1 && s.starts_with('+') {
+            return Ok(CityObjectType::Extension(s));
+        }
+        Err(crate::error::CjseqError::Validation(format!(
+            "{s:?} is not a City Object type; an Extension type starts with '+'"
+        )))
+    }
+}
+
+impl From<CityObjectType> for String {
+    fn from(t: CityObjectType) -> String {
+        match t {
+            CityObjectType::Known(k) => match serde_json::to_value(k) {
+                Ok(Value::String(s)) => s,
+                _ => unreachable!("a unit variant serializes as its name"),
+            },
+            CityObjectType::Extension(s) => s,
+        }
+    }
+}
+
 #[allow(non_upper_case_globals)]
 impl CityObjectType {
     pub const Bridge: CityObjectType = CityObjectType::Known(KnownCityObjectType::Bridge);
@@ -177,7 +197,7 @@ pub struct CityObject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geographical_extent: Option<GeographicalExtent>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub attributes: Option<Value>,
+    pub attributes: Option<Map<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geometry: Option<Vec<Geometry>>,
     #[serde(skip_serializing_if = "Option::is_none")]

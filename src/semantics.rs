@@ -4,8 +4,7 @@ use serde_json::{Map, Value};
 /// The known surface types the spec assigns to Building-, WaterBody-, and
 /// Transportation-family City Objects (§ 3.3 Semantics of geometric
 /// primitives). Every variant is a unit variant already spelled exactly as
-/// the spec requires, so serde's default (non-untagged) derive collapses
-/// each one to its bare name string with no `#[serde(rename)]` needed.
+/// the spec requires, so each serializes as its bare name.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KnownSemanticSurfaceType {
     RoofSurface,
@@ -36,12 +35,9 @@ pub enum KnownSemanticSurfaceType {
 /// (eg `"+ThermalSurface"`, § 8.5); `Extension` carries that string verbatim
 /// so it round-trips byte for byte.
 ///
-/// This nests the known names inside their own unit-only enum rather than
-/// mixing unit variants with `Extension(String)` directly in one flat
-/// `#[serde(untagged)]` enum -- see [`crate::CityObjectType`]'s doc comment
-/// for why a flat mix cannot round-trip (a unit variant under `untagged`
-/// (de)serializes as `null`, not its name; this was verified empirically
-/// while building `CityObjectType`, which has the identical shape).
+/// As with [`crate::CityObjectType`], it is a plain string in JSON, and a
+/// string that is neither a known name nor `+` followed by a name is an
+/// error.
 ///
 /// # Match on the value, not on a reference
 ///
@@ -68,7 +64,7 @@ pub enum KnownSemanticSurfaceType {
 /// arm is still required: `Known` and `Extension` are the real variants, so
 /// the known names alone are not exhaustive.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-#[serde(untagged)]
+#[serde(try_from = "String", into = "String")]
 pub enum SemanticSurfaceType {
     Known(KnownSemanticSurfaceType),
     /// Not a core CityJSON semantic surface type: a CityJSON Extension
@@ -82,6 +78,36 @@ pub enum SemanticSurfaceType {
 /// variants -- and, on
 /// [`SemanticSurfaceType`][SemanticSurfaceType#match-on-the-value-not-on-a-reference],
 /// for why they must be matched on a value rather than on a reference.
+impl TryFrom<String> for SemanticSurfaceType {
+    type Error = crate::error::CjseqError;
+    /// A known name, or an Extension name: `+` followed by at least one
+    /// character. Anything else -- a misspelt core type, say -- is an error.
+    fn try_from(s: String) -> crate::error::Result<Self> {
+        if let Ok(k) = serde_json::from_value::<KnownSemanticSurfaceType>(Value::String(s.clone()))
+        {
+            return Ok(SemanticSurfaceType::Known(k));
+        }
+        if s.len() > 1 && s.starts_with('+') {
+            return Ok(SemanticSurfaceType::Extension(s));
+        }
+        Err(crate::error::CjseqError::Validation(format!(
+            "{s:?} is not a semantic surface type; an Extension type starts with '+'"
+        )))
+    }
+}
+
+impl From<SemanticSurfaceType> for String {
+    fn from(t: SemanticSurfaceType) -> String {
+        match t {
+            SemanticSurfaceType::Known(k) => match serde_json::to_value(k) {
+                Ok(Value::String(s)) => s,
+                _ => unreachable!("a unit variant serializes as its name"),
+            },
+            SemanticSurfaceType::Extension(s) => s,
+        }
+    }
+}
+
 #[allow(non_upper_case_globals)]
 impl SemanticSurfaceType {
     pub const RoofSurface: SemanticSurfaceType =
@@ -453,7 +479,7 @@ mod tests {
     #[test]
     fn extension_typed_semantics_surface_roundtrips_byte_for_byte_inside_a_geometry() {
         let input = concat!(
-            r#"{"type":"MultiSurface","boundaries":[[[0,1,2]]],"#,
+            r#"{"type":"MultiSurface","lod":"1","boundaries":[[[0,1,2]]],"#,
             r#""semantics":{"surfaces":[{"type":"+ThermalSurface","azimuth":30.5}],"values":[0]}}"#
         );
         let parsed: crate::geometry::Geometry = serde_json::from_str(input).unwrap();

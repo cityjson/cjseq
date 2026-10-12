@@ -1,4 +1,4 @@
-use crate::appearance::{MaterialReference, TextureReference};
+use crate::appearance::{MaterialReference, TextureReference, TexturedRing};
 use crate::error::{CjseqError, Result};
 use crate::semantics::Semantics;
 use indexmap::IndexMap;
@@ -41,6 +41,78 @@ impl GeometryType {
     }
 }
 
+/// A level of detail (§ 3.2): `"0"` to `"3"`, optionally refined with one more
+/// digit, `"0.0"` to `"3.3"` -- the twenty values `geomprimitives.schema.json`
+/// enumerates. `"2"` and `"2.0"` are distinct values and stay distinct.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(try_from = "String", into = "String")]
+pub struct Lod {
+    level: u8,
+    refinement: Option<u8>,
+}
+
+impl Lod {
+    /// `level` and `refinement` must each be 0 to 3.
+    pub fn new(level: u8, refinement: Option<u8>) -> Result<Lod> {
+        if level > 3 || refinement.is_some_and(|r| r > 3) {
+            return Err(CjseqError::Validation(format!(
+                "LoD {level}.{refinement:?} is out of range: both parts are 0 to 3"
+            )));
+        }
+        Ok(Lod { level, refinement })
+    }
+    /// The LoD level, 0 to 3.
+    pub fn level(&self) -> u8 {
+        self.level
+    }
+    /// The refinement after the dot, if the value has one.
+    pub fn refinement(&self) -> Option<u8> {
+        self.refinement
+    }
+}
+
+impl std::fmt::Display for Lod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.refinement {
+            Some(r) => write!(f, "{}.{r}", self.level),
+            None => write!(f, "{}", self.level),
+        }
+    }
+}
+
+impl std::str::FromStr for Lod {
+    type Err = CjseqError;
+    fn from_str(s: &str) -> Result<Lod> {
+        let digit = |c: &str| match c.as_bytes() {
+            [d @ b'0'..=b'3'] => Some(d - b'0'),
+            _ => None,
+        };
+        let parsed = match s.split_once('.') {
+            None => digit(s).map(|l| (l, None)),
+            Some((l, r)) => digit(l).zip(digit(r)).map(|(l, r)| (l, Some(r))),
+        };
+        let (level, refinement) = parsed.ok_or_else(|| {
+            CjseqError::Validation(format!(
+                "{s:?} is not a LoD: expected \"0\" to \"3\" or \"0.0\" to \"3.3\""
+            ))
+        })?;
+        Lod::new(level, refinement)
+    }
+}
+
+impl TryFrom<String> for Lod {
+    type Error = CjseqError;
+    fn try_from(s: String) -> Result<Lod> {
+        s.parse()
+    }
+}
+
+impl From<Lod> for String {
+    fn from(l: Lod) -> String {
+        l.to_string()
+    }
+}
+
 /// Per-theme appearance references of a geometry, keyed by theme name.
 pub type Themes<T> = IndexMap<String, T>;
 
@@ -67,22 +139,19 @@ fn nesting_depth(v: &Value) -> usize {
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Geometry {
     MultiPoint {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Ring,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
     },
     MultiLineString {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Vec<Ring>,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
     },
     MultiSurface {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Vec<Surface>,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
@@ -92,8 +161,7 @@ pub enum Geometry {
         texture: Option<Themes<TextureReference>>,
     },
     CompositeSurface {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Vec<Surface>,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
@@ -103,8 +171,7 @@ pub enum Geometry {
         texture: Option<Themes<TextureReference>>,
     },
     Solid {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Vec<Shell>,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
@@ -114,8 +181,7 @@ pub enum Geometry {
         texture: Option<Themes<TextureReference>>,
     },
     MultiSolid {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Vec<Vec<Shell>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
@@ -125,8 +191,7 @@ pub enum Geometry {
         texture: Option<Themes<TextureReference>>,
     },
     CompositeSolid {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        lod: Option<String>,
+        lod: Lod,
         boundaries: Vec<Vec<Shell>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         semantics: Option<Semantics>,
@@ -194,7 +259,7 @@ impl Geometry {
     }
 
     /// The lod of this geometry; a [`Geometry::GeometryInstance`] has none.
-    pub fn lod(&self) -> Option<&str> {
+    pub fn lod(&self) -> Option<Lod> {
         match self {
             Geometry::MultiPoint { lod, .. }
             | Geometry::MultiLineString { lod, .. }
@@ -202,7 +267,7 @@ impl Geometry {
             | Geometry::CompositeSurface { lod, .. }
             | Geometry::Solid { lod, .. }
             | Geometry::MultiSolid { lod, .. }
-            | Geometry::CompositeSolid { lod, .. } => lod.as_deref(),
+            | Geometry::CompositeSolid { lod, .. } => Some(*lod),
             Geometry::GeometryInstance { .. } => None,
         }
     }
@@ -367,9 +432,10 @@ impl Geometry {
                 continue;
             };
             for ring in values.rings_mut() {
-                for (k, z) in ring.iter_mut().enumerate() {
-                    if let Some(thevalue) = *z {
-                        *z = Some(remap(k == 0, thevalue));
+                if let TexturedRing::Textured { texture, uvs } = ring {
+                    *texture = remap(true, *texture);
+                    for uv in uvs {
+                        *uv = remap(false, *uv);
                     }
                 }
             }
@@ -422,7 +488,7 @@ mod tests {
             }))
             .unwrap_or_else(|e| panic!("{name} must accept its own depth: {e}"));
             assert_eq!(g.geometry_type(), thetype);
-            assert_eq!(g.lod(), Some("1"));
+            assert_eq!(g.lod().map(|l| l.to_string()).as_deref(), Some("1"));
             //-- and it must serialize back to exactly the boundaries it was given
             assert_eq!(
                 serde_json::to_value(&g).unwrap()["boundaries"],
@@ -560,7 +626,7 @@ mod tests {
     #[test]
     fn update_texture_honours_a_prefilled_map() {
         let mut g: Geometry = serde_json::from_value(serde_json::json!({
-            "type": "MultiSurface",
+            "type": "MultiSurface", "lod": "2",
             "boundaries": [[[0, 1, 2]]],
             "texture": {"t": {"values": [[[0, 2, 0, 1]]]}}
         }))
@@ -669,12 +735,12 @@ mod tests {
     #[test]
     fn absent_members_are_not_serialized_as_null() {
         let g: Geometry = serde_json::from_value(serde_json::json!({
-            "type": "MultiSurface", "boundaries": [[[0, 1, 2]]]
+            "type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 2]]]
         }))
         .unwrap();
         assert_eq!(
             serde_json::to_value(&g).unwrap(),
-            serde_json::json!({"type": "MultiSurface", "boundaries": [[[0, 1, 2]]]})
+            serde_json::json!({"type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 2]]]})
         );
     }
 }

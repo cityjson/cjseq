@@ -112,7 +112,7 @@ fn a_feature_carries_every_descendant_not_just_children() {
             "b": {"type": "Building", "children": ["p"]},
             "p": {"type": "BuildingPart", "parents": ["b"], "children": ["i"]},
             "i": {"type": "BuildingInstallation", "parents": ["p"], "geometry": [
-                {"type": "MultiPoint", "boundaries": [0]}
+                {"type": "MultiPoint", "lod": "1", "boundaries": [0]}
             ]}
         }),
         json!([[1, 2, 3]]),
@@ -156,7 +156,7 @@ fn a_dangling_child_is_an_error_not_a_panic() {
 #[test]
 fn an_out_of_range_vertex_index_is_an_error_not_a_panic() {
     let cj = doc(
-        json!({"b": {"type": "Building", "geometry": [{"type": "MultiPoint", "boundaries": [0, 7]}]}}),
+        json!({"b": {"type": "Building", "geometry": [{"type": "MultiPoint", "lod": "1", "boundaries": [0, 7]}]}}),
         json!([[1, 2, 3]]),
     );
     assert!(matches!(

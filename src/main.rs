@@ -359,11 +359,6 @@ fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
             "Input file not CityJSON.".to_string(),
         ));
     }
-    if cjj.version != "1.1" && cjj.version != "2.0" {
-        return Err(CjseqError::Validation(
-            "Input file not CityJSON v1.1 nor v2.0.".to_string(),
-        ));
-    }
     cjj.sort_cjfeatures(order);
     //-- first line: the CityJSON "metadata"
     let cj1 = cjj.get_metadata();
@@ -375,25 +370,4 @@ fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
         io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `cat()` used to report a bad version with a hand-rolled `MyError`
-    /// local to the binary. It now reuses the library's `CjseqError`, so a
-    /// bad version must come back as `CjseqError::Validation`, not a panic
-    /// or a generic string error.
-    #[test]
-    fn cat_rejects_a_version_the_crate_does_not_support() {
-        let mut cjj = CityJSON::new();
-        cjj.version = "9.9".to_string();
-        let err = cat(&mut cjj, cjseq::SortingStrategy::Random).unwrap_err();
-        assert!(matches!(err, CjseqError::Validation(_)));
-        assert_eq!(
-            err.to_string(),
-            "invalid CityJSON: Input file not CityJSON v1.1 nor v2.0."
-        );
-    }
 }

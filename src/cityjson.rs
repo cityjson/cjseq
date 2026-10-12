@@ -73,7 +73,7 @@ pub enum SortingStrategy {
 pub struct CityJSON {
     #[serde(rename = "type")]
     pub thetype: CityJSONType,
-    pub version: String,
+    pub version: CityJSONVersion,
     pub transform: Transform,
     #[serde(rename = "CityObjects")]
     pub city_objects: IndexMap<String, CityObject>,
@@ -86,7 +86,7 @@ pub struct CityJSON {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geometry_templates: Option<GeometryTemplates>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Value>,
+    pub extensions: Option<IndexMap<String, Extension>>,
     /// Root members the schema does not name, kept verbatim.
     #[serde(flatten)]
     pub other: Map<String, Value>,
@@ -135,7 +135,7 @@ impl CityJSON {
     pub fn new() -> Self {
         CityJSON {
             thetype: CityJSONType::CityJSON,
-            version: "2.0".to_string(),
+            version: CityJSONVersion::V2_0,
             transform: Transform::new(),
             city_objects: IndexMap::new(),
             vertices: Vec::new(),
@@ -152,7 +152,7 @@ impl CityJSON {
     pub fn get_metadata(&self) -> Self {
         let mut cj0 = CityJSON {
             thetype: self.thetype.clone(),
-            version: self.version.clone(),
+            version: self.version,
             transform: self.transform.clone(),
             metadata: self.metadata.clone(),
             city_objects: IndexMap::new(),
@@ -493,6 +493,26 @@ pub fn cjseq_to_cj(mut base_cj: CityJSON, features: Vec<CityJSONFeature>) -> Cit
     base_cj
 }
 
+/// The CityJSON versions this crate reads and writes.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CityJSONVersion {
+    #[serde(rename = "1.1")]
+    V1_1,
+    #[serde(rename = "2.0")]
+    V2_0,
+}
+
+/// One entry of the `extensions` member (§ 8): where the Extension's schema
+/// lives and which version of it the document uses.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Extension {
+    pub url: String,
+    pub version: String,
+    /// Members the schema does not name, kept verbatim.
+    #[serde(flatten)]
+    pub other: Map<String, Value>,
+}
+
 /// The `type` member of a [`CityJSON`] object. The spec fixes its value to
 /// the single string `"CityJSON"` (§ 1 CityJSON Object); unlike City Object
 /// and semantic-surface types, CityJSON does not define an Extension
@@ -540,7 +560,7 @@ mod tests {
         let b = CityJSON::new();
         assert_eq!(a, b);
         let mut c = CityJSON::new();
-        c.version = "1.1".to_string();
+        c.version = CityJSONVersion::V1_1;
         assert_ne!(a, c);
     }
 

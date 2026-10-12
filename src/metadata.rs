@@ -54,10 +54,9 @@ pub struct PointOfContact {
     pub contact_name: String,
     #[serde(rename = "contactType")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub contact_type: Option<String>,
-    #[serde(rename = "role")]
+    pub contact_type: Option<ContactType>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub role: Option<String>,
+    pub role: Option<ContactRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
     #[serde(rename = "emailAddress")]
@@ -75,6 +74,41 @@ pub struct PointOfContact {
     /// Every contact member the schema does not name, kept verbatim.
     #[serde(flatten)]
     pub other: Map<String, Value>,
+}
+
+/// `pointOfContact.contactType` (§ 5.3).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum ContactType {
+    Individual,
+    Organization,
+}
+
+/// `pointOfContact.role`, from the ISO 19115 role codelist (§ 5.3).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum ContactRole {
+    ResourceProvider,
+    Custodian,
+    Owner,
+    User,
+    Distributor,
+    Originator,
+    PointOfContact,
+    PrincipalInvestigator,
+    Processor,
+    Publisher,
+    Author,
+    Sponsor,
+    #[serde(rename = "co-author")]
+    CoAuthor,
+    Collaborator,
+    Editor,
+    Mediator,
+    RightsHolder,
+    Contributor,
+    Funder,
+    Stakeholder,
 }
 
 /// A reference system following the OGC Name Type Specification.
