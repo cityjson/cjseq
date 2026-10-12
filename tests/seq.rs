@@ -175,3 +175,56 @@ fn a_feature_whose_id_is_not_among_its_objects_cannot_be_collected() {
     .unwrap();
     assert!(c.add(bad).is_err());
 }
+
+/// Collecting merges identical materials and textures into one palette entry,
+/// including ones already in the header, and keeps different ones apart.
+#[test]
+fn collecting_merges_identical_palette_entries() {
+    let header = CityJSON::from_str(
+        &json!({"type": "CityJSON", "version": "2.0",
+            "transform": {"scale": [1.0, 1.0, 1.0], "translate": [0.0, 0.0, 0.0]},
+            "CityObjects": {}, "vertices": [],
+            "appearance": {"materials": [{"name": "h", "diffuseColor": [0.0, 0.0, 0.0]}]}})
+        .to_string(),
+    )
+    .unwrap();
+    let feature = |id: &str, mat: serde_json::Value, tex: serde_json::Value| {
+        CityJSONFeature::from_str(
+            &json!({"type": "CityJSONFeature", "id": id,
+                "CityObjects": {id: {"type": "Building", "geometry": [{
+                    "type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 2]]],
+                    "material": {"m": {"value": 0}},
+                    "texture": {"t": {"values": [[[0, 0, 1, 2]]]}}}]}},
+                "vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+                "appearance": {"materials": [mat], "textures": [tex],
+                    "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]}})
+            .to_string(),
+        )
+        .unwrap()
+    };
+    let png = json!({"type": "PNG", "image": "a.png", "borderColor": [0.0, 0.0, 0.0, 1.0]});
+    let mut c = Collector::new(header);
+    //-- the header's own material, spelled with a negative zero
+    c.add(feature(
+        "a",
+        json!({"name": "h", "diffuseColor": [-0.0, 0.0, 0.0]}),
+        png.clone(),
+    ))
+    .unwrap();
+    c.add(feature("b", json!({"name": "x"}), png.clone()))
+        .unwrap();
+    c.add(feature(
+        "c",
+        json!({"name": "x"}),
+        json!({"type": "JPG", "image": "a.png"}),
+    ))
+    .unwrap();
+    let doc = c.finish();
+    doc.validate().unwrap();
+    let app = doc.appearance.as_ref().unwrap();
+    assert_eq!(app.materials.as_ref().unwrap().len(), 2);
+    assert_eq!(app.textures.as_ref().unwrap().len(), 2);
+    let v = serde_json::to_value(&doc).unwrap();
+    let m = |id: &str| v["CityObjects"][id]["geometry"][0]["material"]["m"]["value"].clone();
+    assert_eq!((m("a"), m("b"), m("c")), (json!(0), json!(1), json!(1)));
+}

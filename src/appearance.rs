@@ -233,6 +233,64 @@ pub struct TextureObject {
     pub border_color: Option<BorderColor>,
 }
 
+/// A float's bits, with `-0.0` folded onto `0.0` so that values equal under
+/// `==` hash alike.
+fn bits(x: f64) -> u64 {
+    (x + 0.0).to_bits()
+}
+
+/// What two materials must share to be the same palette entry: every member,
+/// floats compared by value. Hashable, unlike `MaterialObject` itself.
+#[derive(PartialEq, Eq, Hash)]
+pub(crate) struct MaterialKey {
+    name: String,
+    floats: [Option<u64>; 3],
+    colours: [Option<[u64; 3]>; 3],
+    is_smooth: Option<bool>,
+}
+
+impl MaterialObject {
+    pub(crate) fn key(&self) -> MaterialKey {
+        let colour = |c: &Option<Color>| c.map(|c| c.map(bits));
+        MaterialKey {
+            name: self.name.clone(),
+            floats: [self.ambient_intensity, self.shininess, self.transparency]
+                .map(|f| f.map(bits)),
+            colours: [
+                colour(&self.diffuse_color),
+                colour(&self.emissive_color),
+                colour(&self.specular_color),
+            ],
+            is_smooth: self.is_smooth,
+        }
+    }
+}
+
+/// As [`MaterialKey`], for textures.
+#[derive(PartialEq, Eq, Hash)]
+pub(crate) struct TextureKey {
+    thetype: Option<TextureFormat>,
+    image: Option<String>,
+    wrap_mode: Option<WrapMode>,
+    texture_type: Option<TextureType>,
+    border_color: Option<Vec<u64>>,
+}
+
+impl TextureObject {
+    pub(crate) fn key(&self) -> TextureKey {
+        TextureKey {
+            thetype: self.thetype,
+            image: self.image.clone(),
+            wrap_mode: self.wrap_mode,
+            texture_type: self.texture_type,
+            border_color: self.border_color.as_ref().map(|b| match b {
+                BorderColor::Rgb(c) => c.iter().copied().map(bits).collect(),
+                BorderColor::Rgba(c) => c.iter().copied().map(bits).collect(),
+            }),
+        }
+    }
+}
+
 /// The appearance library of a document or feature: the palettes that
 /// material, texture and texture-vertex indices point into. The schema closes
 /// the object, so a member it does not name is an error.
@@ -262,26 +320,6 @@ impl Appearance {
             vertices_texture: None,
             default_theme_texture: None,
             default_theme_material: None,
-        }
-    }
-    pub(crate) fn add_material(&mut self, jm: MaterialObject) -> usize {
-        let ls = self.materials.get_or_insert_with(Vec::new);
-        match ls.iter().position(|e| *e == jm) {
-            Some(y) => y,
-            None => {
-                ls.push(jm);
-                ls.len() - 1
-            }
-        }
-    }
-    pub(crate) fn add_texture(&mut self, jm: TextureObject) -> usize {
-        let ls = self.textures.get_or_insert_with(Vec::new);
-        match ls.iter().position(|e| *e == jm) {
-            Some(y) => y,
-            None => {
-                ls.push(jm);
-                ls.len() - 1
-            }
         }
     }
     pub(crate) fn add_vertices_texture(&mut self, mut vs: Vec<[f64; 2]>) {

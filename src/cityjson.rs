@@ -1,4 +1,4 @@
-use crate::appearance::Appearance;
+use crate::appearance::{Appearance, MaterialKey, MaterialObject, TextureKey, TextureObject};
 use crate::city_object::CityObject;
 use crate::error::{CjseqError, Result};
 use crate::geometry::GeometryTemplates;
@@ -344,25 +344,52 @@ impl CityJSON {
     }
 }
 
+/// The first position of each key.
+fn positions<K: std::hash::Hash + Eq>(keys: impl Iterator<Item = K>) -> HashMap<K, usize> {
+    let mut m = HashMap::new();
+    for (i, k) in keys.enumerate() {
+        m.entry(k).or_insert(i);
+    }
+    m
+}
+
 /// Collects a CityJSONSeq back into one CityJSON document: start from the
 /// header, [`Collector::add`] each feature, then [`Collector::finish`].
 ///
 /// Features from several sequences can be collected into one document: hand
 /// each further sequence's header to [`Collector::add_header`], and the
 /// features that follow are re-expressed in the first header's transform.
-#[derive(Debug, Clone)]
 pub struct Collector {
     doc: CityJSON,
     /// The transform the features being added are expressed in, when it is
     /// not the document's.
     correction: Option<Transform>,
+    /// Where each distinct material and texture already is in the
+    /// document's palettes.
+    materials: HashMap<MaterialKey, usize>,
+    textures: HashMap<TextureKey, usize>,
 }
 
 impl Collector {
     pub fn new(header: CityJSON) -> Self {
+        let app = header.appearance.as_ref();
+        let materials = positions(
+            app.and_then(|a| a.materials.as_ref())
+                .into_iter()
+                .flatten()
+                .map(MaterialObject::key),
+        );
+        let textures = positions(
+            app.and_then(|a| a.textures.as_ref())
+                .into_iter()
+                .flatten()
+                .map(TextureObject::key),
+        );
         Collector {
             doc: header,
             correction: None,
+            materials,
+            textures,
         }
     }
 
@@ -391,10 +418,20 @@ impl Collector {
         if let Some(cjf_app) = cjf.appearance.take() {
             let app = doc.appearance.get_or_insert_with(Appearance::new);
             for (i, m) in cjf_app.materials.into_iter().flatten().enumerate() {
-                m_oldnew.insert(MaterialIndex(i), MaterialIndex(app.add_material(m)));
+                let all = app.materials.get_or_insert_with(Vec::new);
+                let at = *self.materials.entry(m.key()).or_insert_with(|| {
+                    all.push(m);
+                    all.len() - 1
+                });
+                m_oldnew.insert(MaterialIndex(i), MaterialIndex(at));
             }
             for (i, t) in cjf_app.textures.into_iter().flatten().enumerate() {
-                t_oldnew.insert(TextureIndex(i), TextureIndex(app.add_texture(t)));
+                let all = app.textures.get_or_insert_with(Vec::new);
+                let at = *self.textures.entry(t.key()).or_insert_with(|| {
+                    all.push(t);
+                    all.len() - 1
+                });
+                t_oldnew.insert(TextureIndex(i), TextureIndex(at));
             }
             if let Some(uvs) = cjf_app.vertices_texture {
                 //-- the feature's texture vertices are appended verbatim, so
