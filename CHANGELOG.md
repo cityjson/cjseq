@@ -1,8 +1,20 @@
 # Changelog
 
-## [0.2.0-alpha.1] - 2026-07-22
-### Modified
-- wasm-bindgen bindings are now behind an off-by-default `wasm` cargo feature, so library consumers building for wasm32 no longer inherit them; fixes a duplicate-symbol clash for downstream wasm consumers that define their own bindings.
+## [0.5.0] - unreleased
+### Modified (breaking)
+- The library is split into per-concern modules (`geometry`, `semantics`, `appearance`, `city_object`, `metadata`, `error`, `cityjson`); every type is still re-exported at the crate root.
+- Geometry boundaries, semantics values and appearance values carry their nesting depth in their type; `NestedArray` is removed. Null sub-arrays are accepted where the CityJSON schema allows them, and an explicit `null` material `values` stays distinct from an absent one.
+- CityObject and semantic-surface types are typed enums, with support for extension types (`+Name`).
+- Materials and textures in the appearance library are typed structs; members the schema does not name are rejected.
+- `CityObject.geographicalExtent` is `[f64; 6]`, texture vertices are `[f64; 2]`.
+- Errors are a `CjseqError` type; `Result<T>` lives at `cjseq::error::Result` and is no longer re-exported at the root.
+- wasm-bindgen bindings are behind an off-by-default `wasm` cargo feature, so library consumers building for wasm32 no longer inherit them.
+### Added
+- `CityObject::new`, `children_roles` on `CityObject`, `PartialEq`/`Eq` on the public structs.
+- Round-trip tests over real CityJSONSeq fixtures.
+### Fixed
+- Metadata, address, `pointOfContact`, semantics and appearance members that the schema permits are kept instead of dropped or rejected.
+- Every `referenceSystem` the schema's URL pattern permits is accepted.
 
 ## [0.4.0] - 2025-09-12
 ### Modified

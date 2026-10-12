@@ -1,10 +1,5 @@
-//! `cjseq2` is a typed fork of [`cjseq`](https://github.com/cityjson/cjseq),
-//! for reading, writing, and converting between CityJSON and CityJSONSeq.
-//!
-//! The library crate is still named `cjseq` (see `Cargo.toml`'s `[lib]`
-//! section), so existing code that does `use cjseq::CityJSON` keeps working
-//! unchanged. The package itself is published as `cjseq2` pending an
-//! eventual merge upstream.
+//! `cjseq` reads, writes, and converts between CityJSON and CityJSONSeq,
+//! with the CityJSON schema's structure carried in its types.
 //!
 //! Internally the crate is organised into one module per concern:
 //! - `geometry` — `Geometry`, `GeometryType`, `GeometryTemplates`
