@@ -41,24 +41,12 @@ pub enum CjseqError {
         expected: usize,
         found: usize,
     },
-    /// A core City Object has an Extension City Object as a child, which
-    /// § 8.7 rule 3 says it should not. Reported by `warnings()`, not
-    /// `errors()`: the Noise Extension published with the spec does it.
-    ExtensionChildOfCoreObject { parent: String, child: String },
-    /// Collecting dropped a root member of a CityJSONFeature: the feature
-    /// schema allows any, but a CityJSON document has nowhere to keep them
-    /// per feature. Reported by [`crate::Collector::warnings`].
-    DroppedMember { feature: String, member: String },
     /// City Objects that no feature reaches: their parent is missing, or
     /// does not list them as children.
     NotInAnyFeature { ids: Vec<String> },
     /// Two CityJSONSeq headers being collected into one document disagree
     /// on something that cannot be merged.
     HeaderMismatch { member: String },
-    /// Collecting dropped a member of a later sequence's header that
-    /// differed from the document's. Reported by
-    /// [`crate::Collector::warnings`].
-    DroppedHeaderMember { member: String },
     /// A City Object id that is already in the document, met again while
     /// collecting.
     DuplicateId { id: String },
@@ -92,6 +80,44 @@ pub enum CjseqError {
         /// The length of the array indexed.
         len: usize,
     },
+}
+
+/// Something a valid document or a collect may still do, but that the
+/// spec advises against or that lost data on the way. Never fatal.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Warning {
+    /// A core City Object has an Extension City Object as a child, which
+    /// § 8.7 rule 3 says it should not; the Noise Extension published with
+    /// the spec does it.
+    ExtensionChildOfCoreObject { parent: String, child: String },
+    /// Collecting dropped a root member of a CityJSONFeature: the feature
+    /// schema allows any, but a CityJSON document has nowhere to keep them
+    /// per feature. Also a feature's default theme that disagrees with the
+    /// document's.
+    DroppedMember { feature: String, member: String },
+    /// Collecting dropped a member of a later sequence's header that
+    /// differed from the document's.
+    DroppedHeaderMember { member: String },
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Warning::ExtensionChildOfCoreObject { parent, child } => write!(
+                f,
+                "core City Object {parent:?} has the Extension City Object {child:?} as a child (§ 8.7 rule 3)"
+            ),
+            Warning::DroppedMember { feature, member } => write!(
+                f,
+                "dropped the root member {member:?} of CityJSONFeature {feature:?}"
+            ),
+            Warning::DroppedHeaderMember { member } => write!(
+                f,
+                "dropped {member:?} of a later sequence's header, which differs from the first"
+            ),
+        }
+    }
 }
 
 /// What an out-of-range index was indexing.
@@ -133,14 +159,6 @@ impl fmt::Display for CjseqError {
                 expected,
                 found,
             } => write!(f, "{found} {what} where the boundaries call for {expected}"),
-            CjseqError::ExtensionChildOfCoreObject { parent, child } => write!(
-                f,
-                "core City Object {parent:?} has the Extension City Object {child:?} as a child (§ 8.7 rule 3)"
-            ),
-            CjseqError::DroppedMember { feature, member } => write!(
-                f,
-                "dropped the root member {member:?} of CityJSONFeature {feature:?}"
-            ),
             CjseqError::NotInAnyFeature { ids } => write!(
                 f,
                 "City Objects in no feature (a parent is missing or does not list them as children): {}",
@@ -149,10 +167,6 @@ impl fmt::Display for CjseqError {
             CjseqError::HeaderMismatch { member } => write!(
                 f,
                 "the sequences being collected disagree on {member}"
-            ),
-            CjseqError::DroppedHeaderMember { member } => write!(
-                f,
-                "dropped {member:?} of a later sequence's header, which differs from the first"
             ),
             CjseqError::DuplicateId { id } => {
                 write!(f, "City Object {id:?} is in more than one feature")
@@ -193,12 +207,9 @@ impl std::error::Error for CjseqError {
             | CjseqError::ValueCount { .. }
             | CjseqError::MisplacedMember { .. }
             | CjseqError::Pattern { .. }
-            | CjseqError::ExtensionChildOfCoreObject { .. }
-            | CjseqError::DroppedMember { .. }
             | CjseqError::NotInAnyFeature { .. }
             | CjseqError::HeaderMismatch { .. }
             | CjseqError::DuplicateId { .. }
-            | CjseqError::DroppedHeaderMember { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
     }

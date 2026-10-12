@@ -271,9 +271,9 @@ fn validate(input: &str) -> Result<()> {
                         warnings.extend(h.warnings().iter().map(|e| format!("header: {e}")));
                     }
                     Ok(Line::Feature(f)) => {
-                        let at = |e: &CjseqError| format!("feature {:?}: {e}", f.id);
-                        problems.extend(f.errors().iter().map(at));
-                        warnings.extend(f.warnings().iter().map(at));
+                        let at = |e: &dyn std::fmt::Display| format!("feature {:?}: {e}", f.id);
+                        problems.extend(f.errors().iter().map(|e| at(e)));
+                        warnings.extend(f.warnings().iter().map(|w| at(w)));
                     }
                 }
             }

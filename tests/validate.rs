@@ -513,7 +513,7 @@ fn an_extension_child_under_a_core_city_object_is_a_warning() {
     let w = cj.warnings();
     assert_eq!(w.len(), 1, "{w:?}");
     assert!(
-        matches!(&w[0], CjseqError::ExtensionChildOfCoreObject { parent, child } if parent == "b" && child == "x"),
+        matches!(&w[0], cjseq::Warning::ExtensionChildOfCoreObject { parent, child } if parent == "b" && child == "x"),
         "{w:?}"
     );
     //-- an Extension parent may have either kind of child
@@ -550,7 +550,7 @@ fn the_noise_extension_example_is_valid_with_a_warning_per_segment() {
     cj.validate().unwrap();
     let w = cj.warnings();
     assert_eq!(w.len(), 2, "{w:?}");
-    assert!(w.iter().all(|e| matches!(e, CjseqError::ExtensionChildOfCoreObject { parent, .. } if parent == "a_noisy_bench")));
+    assert!(w.iter().all(|e| matches!(e, cjseq::Warning::ExtensionChildOfCoreObject { parent, .. } if parent == "a_noisy_bench")));
 }
 
 /// An address's `location` is a MultiPoint into `vertices` (§ 2.3): its
@@ -599,4 +599,15 @@ fn an_address_location_is_a_geometry_like_any_other() {
     );
     let e = inner(first_error(&bad), "b");
     assert!(e.to_string().contains("MultiPoint"), "{e}");
+}
+
+/// Warnings and errors are different types, so a caller cannot mistake one
+/// for the other.
+#[test]
+fn warnings_are_not_errors() {
+    fn is_warnings(_: &[cjseq::Warning]) {}
+    let cj = doc(json!({}), json!([]), json!({}));
+    is_warnings(&cj.warnings());
+    is_warnings(&CityJSONFeature::new().warnings());
+    is_warnings(cjseq::Collector::new(cj).warnings());
 }

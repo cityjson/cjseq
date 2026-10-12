@@ -1,6 +1,6 @@
 use crate::appearance::{Appearance, MaterialKey, MaterialObject, TextureKey, TextureObject};
 use crate::city_object::{CityObject, CityObjectType};
-use crate::error::{CjseqError, IndexKind, Result};
+use crate::error::{CjseqError, IndexKind, Result, Warning};
 use crate::geometry::{Geometry, GeometryTemplates};
 use crate::index::{Index, MaterialIndex, TextureIndex, UvIndex, VertexIndex};
 use crate::metadata::{Metadata, Transform};
@@ -441,7 +441,7 @@ pub struct Collector {
     /// document's palettes.
     materials: HashMap<MaterialKey, usize>,
     textures: HashMap<TextureKey, usize>,
-    warnings: Vec<CjseqError>,
+    warnings: Vec<Warning>,
 }
 
 /// How one source's appearance indices map onto the document's palettes.
@@ -485,7 +485,7 @@ impl Collector {
     fn merge_appearance(
         &mut self,
         app: Appearance,
-        dropped: &dyn Fn(String) -> CjseqError,
+        dropped: &dyn Fn(String) -> Warning,
     ) -> PaletteMaps {
         let mut maps = PaletteMaps::default();
         let doc_app = self.doc.appearance.get_or_insert_with(Appearance::new);
@@ -567,7 +567,7 @@ impl Collector {
                 }
             }
         }
-        let header_dropped = |member: String| CjseqError::DroppedHeaderMember { member };
+        let header_dropped = |member: String| Warning::DroppedHeaderMember { member };
         if header.metadata.is_some() && header.metadata != self.doc.metadata {
             self.warnings.push(header_dropped("metadata".to_string()));
         }
@@ -681,14 +681,14 @@ impl Collector {
         }
         self.check_indices(&mut cjf)?;
         for member in cjf.other.keys() {
-            self.warnings.push(CjseqError::DroppedMember {
+            self.warnings.push(Warning::DroppedMember {
                 feature: cjf.id.clone(),
                 member: member.clone(),
             });
         }
         let id = cjf.id.clone();
         let mut maps = match cjf.appearance.take() {
-            Some(app) => self.merge_appearance(app, &|member| CjseqError::DroppedMember {
+            Some(app) => self.merge_appearance(app, &|member| Warning::DroppedMember {
                 feature: id.clone(),
                 member,
             }),
@@ -723,7 +723,7 @@ impl Collector {
     }
 
     /// What collecting has had to drop so far.
-    pub fn warnings(&self) -> &[CjseqError] {
+    pub fn warnings(&self) -> &[Warning] {
         &self.warnings
     }
 

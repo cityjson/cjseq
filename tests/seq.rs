@@ -245,9 +245,9 @@ fn collecting_reports_each_feature_root_member_it_drops() {
     let w = c.warnings();
     assert_eq!(w.len(), 2, "{w:?}");
     assert!(
-        matches!(&w[0], CjseqError::DroppedMember { feature, member } if feature == "a" && member == "+provenance")
+        matches!(&w[0], cjseq::Warning::DroppedMember { feature, member } if feature == "a" && member == "+provenance")
     );
-    assert!(matches!(&w[1], CjseqError::DroppedMember { member, .. } if member == "+note"));
+    assert!(matches!(&w[1], cjseq::Warning::DroppedMember { member, .. } if member == "+note"));
     let doc = c.finish();
     assert!(!doc.other.contains_key("+provenance"));
 }

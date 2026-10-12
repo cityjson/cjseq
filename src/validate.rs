@@ -5,7 +5,7 @@
 use crate::appearance::{Appearance, MaterialReference, TextureReference, TexturedRing};
 use crate::city_object::{CityObject, CityObjectType};
 use crate::cityjson::{CityJSON, CityJSONFeature};
-use crate::error::{CjseqError, Result};
+use crate::error::{CjseqError, Result, Warning};
 use crate::geometry::{Geometry, Shell, Surface, Themes};
 use crate::index::{
     Index, Indices, MaterialIndex, MultiSolidValues, PrimitiveValues, SolidValues, SurfaceIndex,
@@ -364,7 +364,7 @@ fn hierarchy(
 /// A CityObjectGroup's `children` are its members, not a hierarchy, so the
 /// rule does not apply to it. Each pair is reported once, whichever side
 /// names the other.
-fn extension_children(cos: &IndexMap<String, CityObject>) -> Vec<CjseqError> {
+fn extension_children(cos: &IndexMap<String, CityObject>) -> Vec<Warning> {
     let core = |co: &CityObject| {
         matches!(co.thetype, CityObjectType::Known(_))
             && co.thetype != CityObjectType::CityObjectGroup
@@ -389,7 +389,7 @@ fn extension_children(cos: &IndexMap<String, CityObject>) -> Vec<CjseqError> {
     }
     pairs
         .into_iter()
-        .map(|(parent, child)| CjseqError::ExtensionChildOfCoreObject {
+        .map(|(parent, child)| Warning::ExtensionChildOfCoreObject {
             parent: parent.to_string(),
             child: child.to_string(),
         })
@@ -480,7 +480,7 @@ impl CityJSON {
 
     /// What the spec advises against but a valid document may still do:
     /// a core City Object with an Extension child (§ 8.7 rule 3).
-    pub fn warnings(&self) -> Vec<CjseqError> {
+    pub fn warnings(&self) -> Vec<Warning> {
         extension_children(&self.city_objects)
     }
 }
@@ -514,7 +514,7 @@ impl CityJSONFeature {
     }
 
     /// As [`CityJSON::warnings`].
-    pub fn warnings(&self) -> Vec<CjseqError> {
+    pub fn warnings(&self) -> Vec<Warning> {
         extension_children(&self.city_objects)
     }
 }
