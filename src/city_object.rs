@@ -3,10 +3,8 @@ use crate::metadata::GeographicalExtent;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// The known 1st- and 2nd-level City Object types (§ 2 The different City
-/// Objects). Every variant is a unit variant and every identifier is already
-/// spelled exactly as the spec requires (eg `TINRelief`, `WaterBody`,
-/// `CityFurniture`), so each serializes as its bare name.
+/// The 1st- and 2nd-level City Object types the spec defines (§ 2), each
+/// serialized as its name.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KnownCityObjectType {
     Bridge,
@@ -44,29 +42,19 @@ pub enum KnownCityObjectType {
     WaterBody,
 }
 
-/// The `type` member of a City Object (§ 2 The different City Objects).
+/// The `type` of a City Object (§ 2): a known type, or an Extension type,
+/// which starts with `+` (eg `"+NoiseCityFurnitureSegment"`, § 8) and is kept
+/// verbatim. In JSON it is a string; a string that is neither a known name nor
+/// `+` followed by a name is an error, so a misspelt core type (`"Buildng"`)
+/// does not pass as an Extension.
 ///
-/// `Known` covers the 1st- and 2nd-level City Object types defined by the
-/// CityJSON 2.0.1 spec. Any other value is a CityJSON Extension type, which
-/// the spec requires to start with `"+"` (§ 8 Extensions) -- `Extension`
-/// carries that string verbatim so a file using an Extension (eg
-/// `"+NoiseCityFurnitureSegment"`) round-trips byte for byte.
+/// # Matching
 ///
-/// In JSON it is a plain string, converted through `TryFrom<String>`: a
-/// string that is neither a known name nor `+` followed by a name is an
-/// error, so a misspelt core type (`"Buildng"`) does not pass as an
-/// Extension.
-///
-/// # Match on the value, not on a reference
-///
-/// Each known name is also available flat, as an associated `const` (eg
-/// [`CityObjectType::BuildingPart`]) -- see the `impl` block below for the
-/// full list. They are `const`s, not variants: this enum has exactly the two
-/// variants above. That distinction bites in exactly one place, and it bites
-/// silently, so it belongs here rather than in the small print:
+/// Each known type is also an associated `const` ([`CityObjectType::BuildingPart`]
+/// and so on). Match on a value, not a reference:
 ///
 /// ```
-/// # use cjseq::{CityObjectType, KnownCityObjectType};
+/// # use cjseq::CityObjectType;
 /// # let t = &CityObjectType::Building;
 /// match *t {
 ///     CityObjectType::Building => { /* .. */ }
@@ -75,34 +63,17 @@ pub enum KnownCityObjectType {
 /// }
 /// ```
 ///
-/// Note the `*`. Matching a `const` path against a `&CityObjectType` -- ie
-/// `match t` where `t: &CityObjectType`, or `match &t` -- is `E0308`
-/// ("mismatched types"), and rustc's fix-it suggests renaming the arm to a
-/// fresh binding. That *compiles*, and silently turns the arm into a
-/// catch-all that matches everything, because `Building` in pattern position
-/// reads as a new irrefutable binding rather than as the constant. The `_`
-/// arm is still required after `Extension(ref s)`: the match is not
-/// exhaustive over just the known names, since `Known` and `Extension` are
-/// the real variants.
+/// Without the `*` the match does not compile, and the fix rustc suggests
+/// turns the `Building` arm into a binding that matches everything. The `_` arm
+/// is needed because the real variants are `Known` and `Extension`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(try_from = "String", into = "String")]
 pub enum CityObjectType {
     Known(KnownCityObjectType),
-    /// Not a core CityJSON type: a CityJSON Extension type, always spelled
-    /// with a leading `"+"`.
+    /// An Extension type, with its leading `+`.
     Extension(String),
 }
 
-/// Flat, spec-spelling access to each known variant (eg
-/// `CityObjectType::BuildingPart`), so call sites read exactly like the
-/// CityJSON type name rather than `CityObjectType::Known(KnownCityObjectType::BuildingPart)`.
-/// These are associated `const`s, not enum variants -- `CityObjectType`
-/// itself has exactly the two variants above -- but a `const` path is usable
-/// wherever a variant path would be: in expressions (`x == CityObjectType::Bridge`)
-/// and, because the type derives `PartialEq`/`Eq`, in match patterns too --
-/// but only when matching on a *value*. See
-/// [`CityObjectType`][CityObjectType#match-on-the-value-not-on-a-reference]
-/// for why that matters and how it fails silently otherwise.
 impl TryFrom<String> for CityObjectType {
     type Error = crate::error::CjseqError;
     /// A known name, or an Extension name: `+` followed by at least one
@@ -132,6 +103,8 @@ impl From<CityObjectType> for String {
     }
 }
 
+/// Each known type as a constant, spelled as in the spec; see
+/// [`CityObjectType`] on matching them.
 #[allow(non_upper_case_globals)]
 impl CityObjectType {
     pub const Bridge: CityObjectType = CityObjectType::Known(KnownCityObjectType::Bridge);
@@ -202,39 +175,20 @@ pub struct CityObject {
     pub geometry: Option<Vec<Geometry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<String>>,
-    /// § 2.5 CityObjectGroup only: the role of each id in `children`, in the
-    /// same order. `cityobjects.schema.json` types each item as
-    /// `["string", "null"]`, so an unspecified role is `null`, not simply
-    /// absent from the array.
+    /// CityObjectGroup only (§ 2.5): the role of each id in `children`, in the
+    /// same order; an unspecified role is `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children_roles: Option<Vec<Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parents: Option<Vec<String>>,
-    /// Members the schema does not name, carried verbatim so they survive a
-    /// round trip. `pub`, like every other `#[serde(flatten)]` catch-all in
-    /// this crate, so a `CityObject` can be written as a struct literal.
+    /// Members the schema does not name, kept verbatim.
     #[serde(flatten)]
     pub other: Map<String, Value>,
 }
 
 impl CityObject {
-    /// A City Object of `thetype` carrying nothing else.
-    ///
-    /// `other` is deliberately not a constructor parameter: it is the
-    /// `#[serde(flatten)]` catch-all for members the schema does not name, and
-    /// a value built in code has none. Callers that need one set the named
-    /// fields directly, which are all `pub`.
-    ///
-    /// This is a convenience, not a necessity: every field is `pub`, so a
-    /// struct literal works too. It saves writing seven `None`s and getting
-    /// the `other` sentinel right (see below).
-    ///
-    /// `other` is an empty *object*, not `Value::Null`: that is what
-    /// deserializing a City Object with no unrecognized members produces, and
-    /// the derived `PartialEq` compares it. A `Null` here would serialize
-    /// identically but make every constructed object compare unequal to its
-    /// parsed twin -- silently, and only ever noticed by a test that compares
-    /// whole objects.
+    /// A City Object of `thetype` with nothing else; it equals the one parsed
+    /// from `{"type": ...}`. Every field is `pub`, so set the others directly.
     pub fn new(thetype: CityObjectType) -> Self {
         CityObject {
             thetype,
@@ -263,12 +217,8 @@ impl CityObject {
 mod tests {
     use super::*;
 
-    /// A constructed City Object must equal the one deserializing the
-    /// equivalent minimal JSON produces. Serializing both and comparing the
-    /// output is not enough: `other: Value::Null` and `other: Value::Object({})`
-    /// both serialize to nothing, so only `==` distinguishes them -- and `==`
-    /// is what a caller round-tripping a document through its own encoder will
-    /// reach for.
+    /// A constructed City Object equals the one parsed from the same JSON, which
+    /// only `==` can tell: an empty `other` and a missing one serialize alike.
     #[test]
     fn a_constructed_city_object_equals_its_parsed_twin() {
         let constructed = CityObject::new(CityObjectType::Building);
@@ -306,10 +256,7 @@ mod tests {
         assert_eq!(t, CityObjectType::BuildingPart);
     }
 
-    /// A known name prefixed with `+` is not the known variant: extensions are
-    /// spelled with a leading `+` precisely so they never collide with a core
-    /// type, and ordering (known arm declared first) must not accidentally
-    /// swallow it either.
+    /// A known name with a `+` is an Extension type, not the known one.
     #[test]
     fn plus_prefixed_known_name_lands_in_extension_not_the_known_variant() {
         let t: CityObjectType = serde_json::from_value(serde_json::json!("+Building")).unwrap();
@@ -317,25 +264,8 @@ mod tests {
         assert_ne!(t, CityObjectType::Building);
     }
 
-    /// The stated critical requirement names a specific shape: a `CityObject`
-    /// (inside a `CityJSONFeature`, since that is how `flatcitybuf`'s
-    /// `noise_extension` fixture is shaped) whose `type` is an Extension
-    /// string, where `CityObjectType` sits behind `CityObject`'s
-    /// `#[serde(flatten)] other` field. The bare-`CityObjectType` tests above
-    /// don't exercise that flatten path at all, so this pins it at the
-    /// document level, asserting on the serialized *string* -- not a
-    /// re-parsed `Value` -- so a change that reorders or reformats output
-    /// would fail this test even though it would pass a structural check.
-    ///
-    /// The extra `"+noiseLevel"` member is deliberate and load-bearing: it is
-    /// *not* `"attributes"` (that member has its own dedicated,
-    /// already-typed `CityObject` field and so would never touch `other` at
-    /// all) but a genuinely unrecognized top-level member, so it is the one
-    /// that actually exercises `#[serde(flatten)] other: serde_json::Value`.
-    /// It carries a nested object (not a bare scalar) to prove nested
-    /// content survives too, and there is exactly one such extra member,
-    /// because `other`'s `serde_json::Map` has no stable iteration order
-    /// once it holds two or more keys.
+    /// An Extension-typed City Object with an extra, nested member, inside a
+    /// feature, round-trips byte for byte.
     #[test]
     fn extension_typed_city_object_roundtrips_byte_for_byte_inside_a_feature() {
         let input = concat!(
@@ -357,8 +287,6 @@ mod tests {
         );
     }
 
-    /// Every public type in this crate derives `PartialEq`; `CityObject` was
-    /// missing it.
     #[test]
     fn city_object_with_equal_fields_is_equal() {
         let input = serde_json::json!({"type": "Building"});
@@ -370,10 +298,7 @@ mod tests {
         assert_ne!(a, c);
     }
 
-    /// `cityobjects.schema.json`'s `_AbstractCityObject.geographicalExtent`
-    /// has `minItems`/`maxItems` 6 -- a fixed-length array, not an arbitrary
-    /// `Vec<f64>` -- so a 5- or 7-element extent must fail to deserialize
-    /// rather than being silently accepted.
+    /// `geographicalExtent` has exactly six numbers.
     #[test]
     fn city_object_geographical_extent_rejects_the_wrong_length() {
         let too_short = serde_json::json!({
@@ -403,11 +328,7 @@ mod tests {
         assert_eq!(serde_json::to_value(&co).unwrap(), input);
     }
 
-    /// § 2.5 CityObjectGroup: a group `CityObject` may carry a `children_roles`
-    /// member, one entry per id in `children`, describing that child's role
-    /// in the group. `cityobjects.schema.json`'s `CityObjectGroup` types each
-    /// item as `["string", "null"]`, so an unspecified role is `null`, not an
-    /// absent array entry -- this must round-trip too.
+    /// `children_roles` round-trips, `null` roles included.
     #[test]
     fn city_object_group_children_roles_round_trips_including_null_entries() {
         let input = serde_json::json!({
@@ -423,9 +344,7 @@ mod tests {
         assert_eq!(serde_json::to_value(&co).unwrap(), input);
     }
 
-    /// Every known CityObjectType name round-trips through its unit variant,
-    /// not through Extension -- a typo'd rename would otherwise silently fall
-    /// through to Extension and no other test would catch it.
+    /// Every known name parses to its own variant, not to `Extension`.
     #[test]
     fn every_known_city_object_type_round_trips_as_its_unit_variant() {
         let known: &[(&str, CityObjectType)] = &[

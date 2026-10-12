@@ -4,6 +4,8 @@ use serde_json::{Map, Value};
 
 const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 
+/// The `transform` member (§ 4.1): a vertex's real coordinates are its integer
+/// coordinates times `scale`, plus `translate`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Transform {
@@ -26,23 +28,14 @@ impl Transform {
     }
 }
 
+/// `[minx, miny, minz, maxx, maxy, maxz]`.
 pub type GeographicalExtent = [f64; 6];
 
-/// The `address` member of a [`PointOfContact`] (§ 5.3 pointOfContact).
+/// The `address` member of a [`PointOfContact`] (§ 5.3).
 ///
-/// Deliberately free-form, and that is what the normative schema asks for:
-/// `metadata.schema.json` types `address` as a bare `{"type": "object"}` --
-/// no `properties`, no `required`, no `additionalProperties`. The prose says
-/// why in as many words: "any properties can be used, to accommodate the
-/// different ways addresses are structured in different countries" (§ 5.3).
-///
-/// This type used to declare five *required* members (`thoroughfareNumber`
-/// typed `i64`, `thoroughfareName`, `locality`, `postalCode`, `country`) and
-/// so rejected nearly every legal address -- including both of the spec's own
-/// examples, which spell the number as a *string* (`"134"`, `"24"`) and the
-/// postcode as `postcode`, not `postalCode`. Structure the model does not
-/// actually know is worse than no structure: it turns valid input into a
-/// parse error.
+/// Free-form: the schema types it as a bare object, since addresses are
+/// structured differently from country to country. Its members are kept as
+/// they are.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Address {
     #[serde(flatten)]
@@ -51,10 +44,8 @@ pub struct Address {
 
 /// The `pointOfContact` member of [`Metadata`] (§ 5.3).
 ///
-/// `contactName` and `emailAddress` are the schema's only two `required`
-/// members; everything else is optional. As with [`Metadata`], the schema's
-/// `contactDetails` definition declares no `additionalProperties: false`, so
-/// `other` keeps anything further rather than dropping it.
+/// `contactName` and `emailAddress` are required; the rest is optional.
+/// Members the schema does not name are kept in `other`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PointOfContact {
     #[serde(rename = "contactName")]
@@ -70,10 +61,7 @@ pub struct PointOfContact {
     pub email_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
-    /// The name of the organisation, "to be used if the `contactName` is the
-    /// name of a person" (§ 5.3). Named by both the prose and the schema's
-    /// `contactDetails.properties`; it had no field here at all, so it was
-    /// silently dropped.
+    /// The organisation, when `contact_name` names a person.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub organization: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,52 +106,16 @@ pub enum ContactRole {
     Stakeholder,
 }
 
-/// A reference system following the OGC Name Type Specification.
+/// A `referenceSystem` URL, `https://www.opengis.net/def/crs/{authority}/{version}/{code}`
+/// in the OGC form every real file uses.
 ///
-/// The format follows: `http://www.opengis.net/def/crs/{authority}/{version}/{code}`
-/// where:
-/// - `{authority}` designates the authority responsible for the definition of this CRS
-///   (usually "EPSG" or "OGC")
-/// - `{version}` designates the specific version of the CRS
-///   (use "0" if there is no version)
-/// - `{code}` is the identifier for the specific coordinate reference system
+/// The schema only requires the prefix `(http|https)://www.opengis.net/def/crs/`,
+/// so the path after it is kept as `segments`, verbatim: a path with more or
+/// fewer than three elements, or a trailing slash, round-trips unchanged. The
+/// OGC reading is [`ReferenceSystem::authority`], [`ReferenceSystem::version`]
+/// and [`ReferenceSystem::code`], each `None` when the path is too short.
 ///
-/// That three-element form is what OGC names and what every real file uses,
-/// but it is **not** what makes a `referenceSystem` legal. The normative
-/// constraint in `metadata.schema.json` is a prefix pattern and nothing else:
-///
-/// ```text
-/// "referenceSystem": {
-///   "type": "string",
-///   "pattern": "^(http|https)://www.opengis.net/def/crs/"
-/// }
-/// ```
-///
-/// So `.../crs/EPSG/0/4326/extra` and `.../crs/EPSG/0/7415/` are both legal
-/// CityJSON, and an earlier version of this type rejected them outright by
-/// demanding exactly three `/`-separated elements. That is the same
-/// rejects-legal defect as the old [`Address`], and the fix is the same:
-/// stop inventing structure the format does not mandate.
-///
-/// Hence `segments` rather than three named fields. It holds the path
-/// elements after `.../def/crs/` verbatim, so [`ReferenceSystem::to_url`] can
-/// rebuild *any* legal URL byte for byte -- including a trailing slash, which
-/// is simply a final empty element. The OGC reading is still available, as
-/// [`ReferenceSystem::authority`], [`ReferenceSystem::version`] and
-/// [`ReferenceSystem::code`], which return `None` when the URL does not have
-/// that shape. Keeping the three as plain fields *alongside* the verbatim
-/// path was the obvious alternative and is a trap: the two representations
-/// can disagree, and then `to_url` silently contradicts the fields.
-///
-/// In JSON this is a single string, not an object, so the derive needs
-/// telling how to get between the two. `#[serde(try_from/into)]` does exactly
-/// that and nothing else: `Serialize` and `Deserialize` stay **derived**, and
-/// the conversion is ordinary `TryFrom`/`From` code that serde calls on
-/// either side of a plain `String`. This replaces a hand-written `Serialize`
-/// and `Deserialize` pair, which violated the crate's derived-only rule --
-/// hand-written impls are the one place a field can be silently dropped or
-/// reshaped without any type-level trace, which is the whole reason for the
-/// rule.
+/// In JSON it is a string, converted through `TryFrom<String>`/`Into<String>`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(try_from = "String", into = "String")]
 pub struct ReferenceSystem {
@@ -199,27 +151,15 @@ impl ReferenceSystem {
         self.segments.get(2).map(String::as_str)
     }
 
-    /// Rebuild the URL. Exact for every input [`ReferenceSystem::from_url`]
-    /// accepts, whatever its element count -- `segments` is stored verbatim,
-    /// so there is nothing to reconstruct incorrectly.
+    /// The URL, exactly as [`ReferenceSystem::from_url`] read it.
     pub fn to_url(&self) -> String {
         format!("{}/{}", self.base_url, self.segments.join("/"))
     }
 
-    /// Parse a `referenceSystem` string.
-    ///
-    /// The only thing checked is the prefix, because the prefix is the only
-    /// thing `metadata.schema.json` constrains. The OGC three-element form is
-    /// a convention this honours (see [`ReferenceSystem::authority`] and
-    /// friends) but does not enforce, so a longer or shorter path is carried
-    /// through rather than rejected.
+    /// Parse a `referenceSystem` string. Only the prefix the schema requires
+    /// is checked.
     pub fn from_url(url: &str) -> crate::error::Result<Self> {
-        //-- the schema's pattern is `^(http|https)://www.opengis.net/def/crs/`,
-        //-- and the `^` is load-bearing: it anchors the scheme. Searching for
-        //-- the host anywhere in the string would accept `ftp://www.opengis
-        //-- .net/def/crs/x`, or any URL that merely embeds the host in a query
-        //-- string, neither of which the pattern matches. So: `starts_with`,
-        //-- once per permitted scheme.
+        //-- the pattern is anchored: the URL must start with it
         const PREFIXES: [&str; 2] = [
             "http://www.opengis.net/def/crs/",
             "https://www.opengis.net/def/crs/",
@@ -239,9 +179,8 @@ impl ReferenceSystem {
     }
 }
 
-/// The two conversions `#[serde(try_from = "String", into = "String")]` calls.
-/// They carry no serde logic of their own -- they are the same `to_url` and
-/// `from_url` the rest of the crate uses.
+/// The conversions serde uses: [`ReferenceSystem::to_url`] and
+/// [`ReferenceSystem::from_url`].
 impl From<ReferenceSystem> for String {
     fn from(rs: ReferenceSystem) -> String {
         rs.to_url()
@@ -255,21 +194,11 @@ impl TryFrom<String> for ReferenceSystem {
     }
 }
 
-/// The `metadata` member of a [`crate::CityJSON`] object (§ 5 Metadata).
+/// The `metadata` member of a [`crate::CityJSON`] (§ 5).
 ///
-/// The six members below are the ones the core spec names. They are *not* the
-/// only ones a valid document may carry: `metadata.schema.json`'s `metadata`
-/// object declares those six under `properties` and then stops -- there is no
-/// `additionalProperties: false`, unlike (say) `transform` or
-/// `geometry-templates`, which both do declare it. So any further member is
-/// legal CityJSON, and the spec itself points at the MetadataExtended
-/// Extension as the place to put more.
-///
-/// Hence `other`: without it every such member is silently dropped on the way
-/// through. Real files rely on this -- every 3DBAG dataset carries
-/// `fullMetadataUrl` and `version` in its metadata (see
-/// `tests/data/small.city.jsonl`), and before this field existed both simply
-/// vanished.
+/// The fields are the six members the spec names. The schema leaves the object
+/// open, and real files use that (3DBAG files carry `fullMetadataUrl` and
+/// `version`), so any other member is kept in `other`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Metadata {
     #[serde(rename = "geographicalExtent")]
@@ -297,10 +226,6 @@ pub struct Metadata {
 mod tests {
     use super::*;
 
-    /// Every public type in this crate derives `PartialEq` so values can be
-    /// compared directly, not just formatted and eyeballed via `Debug`.
-    /// `Transform`, `Address`, `PointOfContact`, `ReferenceSystem`, and
-    /// `Metadata` were missing it; this pins that they now support `==`.
     #[test]
     fn transform_with_equal_fields_is_equal() {
         let a = Transform::new();
@@ -343,12 +268,8 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    /// The `pointOfContact` example in § 5.3 of the spec, verbatim. cjseq
-    /// rejected it outright -- `"thoroughfareNumber": "24"` is a string and
-    /// `Address.thoroughfare_number` was an `i64` -- which is the plainest
-    /// possible demonstration that the old `Address` invented structure the
-    /// spec does not have. `metadata.schema.json` types `address` as bare
-    /// `{"type": "object"}`.
+    /// The `pointOfContact` example of § 5.3, verbatim: its `thoroughfareNumber`
+    /// is a string.
     #[test]
     fn the_specs_own_point_of_contact_example_parses_and_round_trips() {
         let input = serde_json::json!({
@@ -390,8 +311,6 @@ mod tests {
         }
     }
 
-    /// `organization` is named by both § 5.3 and the schema's
-    /// `contactDetails.properties`, and had no field here, so it vanished.
     #[test]
     fn point_of_contact_keeps_organization_and_unnamed_members() {
         let input = serde_json::json!({
@@ -408,8 +327,7 @@ mod tests {
         assert_eq!(serde_json::to_value(&poc).unwrap(), input);
     }
 
-    /// The two members the schema marks `required` are still required: this
-    /// change relaxes `address`, not the contact itself.
+    /// `contactName` and `emailAddress` are required.
     #[test]
     fn point_of_contact_still_requires_the_two_members_the_schema_requires() {
         assert!(serde_json::from_value::<PointOfContact>(
@@ -431,11 +349,7 @@ mod tests {
         assert_ne!(a, c);
     }
 
-    /// `ReferenceSystem` is a struct in Rust and a bare string in JSON.
-    /// Swapping its hand-written `Serialize`/`Deserialize` for
-    /// `#[serde(try_from/into)]` must not change one byte of that: a derived
-    /// `Serialize` on a four-field struct would otherwise emit an *object*,
-    /// which is what this pins.
+    /// A struct in Rust, a string in JSON.
     #[test]
     fn reference_system_is_a_string_in_json_not_an_object() {
         let url = "https://www.opengis.net/def/crs/EPSG/0/7415";
@@ -446,19 +360,12 @@ mod tests {
         assert_eq!(serde_json::to_value(&rs).unwrap(), serde_json::json!(url));
     }
 
-    /// `metadata.schema.json` constrains `referenceSystem` by a *prefix
-    /// pattern* and nothing else, so a path with more or fewer than three
-    /// elements is legal CityJSON. cjseq demanded exactly three and rejected
-    /// the rest outright -- the same rejects-legal defect as the old
-    /// `Address`, and caught by the same review (codex finding A2, whose
-    /// `.../EPSG/0/4326/extra` example is the first case below).
-    ///
-    /// Each must survive byte for byte: `to_url` rebuilds from the verbatim
-    /// path, so a trailing slash (a final empty element) comes back too.
+    /// The schema constrains `referenceSystem` by its prefix only, so a path
+    /// with more or fewer than three elements is legal, and each must round-trip
+    /// byte for byte, a trailing slash included.
     #[test]
     fn any_url_matching_the_schemas_prefix_pattern_is_accepted_and_round_trips() {
         for url in [
-            //-- codex's own example
             "https://www.opengis.net/def/crs/EPSG/0/4326/extra",
             //-- a trailing slash: a fourth, empty element
             "https://www.opengis.net/def/crs/EPSG/0/7415/",
@@ -499,8 +406,7 @@ mod tests {
         assert_eq!(long.segments.len(), 4);
     }
 
-    /// Relaxing the path must not relax the prefix: the pattern is the one
-    /// thing the schema does constrain.
+    /// The prefix is still required.
     #[test]
     fn a_url_failing_the_prefix_pattern_is_still_rejected() {
         for bad in [
@@ -509,9 +415,7 @@ mod tests {
             //-- the prefix pattern ends in a slash; `.../crs` alone lacks it
             "https://www.opengis.net/def/crs",
             "",
-            //-- the pattern is anchored, and names exactly two schemes. A
-            //-- substring search for the host would have let all three of
-            //-- these through with a nonsense `base_url`.
+            //-- the pattern is anchored, and names exactly two schemes
             "ftp://www.opengis.net/def/crs/EPSG/0/7415",
             "www.opengis.net/def/crs/EPSG/0/7415",
             "https://example.com/?redirect=https://www.opengis.net/def/crs/EPSG/0/7415",
@@ -523,8 +427,6 @@ mod tests {
         }
     }
 
-    /// And inside the metadata object it composes, which is the only place it
-    /// is ever actually serialized.
     #[test]
     fn reference_system_round_trips_inside_metadata() {
         let input = serde_json::json!({
@@ -534,8 +436,6 @@ mod tests {
         assert_eq!(serde_json::to_value(&m).unwrap(), input);
     }
 
-    /// A string that is not a CRS URL is still an error rather than a silent
-    /// default -- the conversion is `TryFrom`, and serde surfaces its error.
     #[test]
     fn a_non_crs_reference_system_is_rejected() {
         assert!(serde_json::from_value::<ReferenceSystem>(serde_json::json!("not-a-url")).is_err());
@@ -556,12 +456,8 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    /// `metadata.schema.json`'s `metadata` object lists six properties and
-    /// declares no `additionalProperties: false`, so any further member is
-    /// legal CityJSON. Real 3DBAG files carry `fullMetadataUrl` and
-    /// `version`; before `Metadata.other` existed, both were silently dropped
-    /// on the way through, which `tests/roundtrip.rs` caught on
-    /// `tests/data/small.city.jsonl`.
+    /// Members the spec does not name, such as 3DBAG's `fullMetadataUrl`, are
+    /// kept.
     #[test]
     fn metadata_keeps_members_the_core_spec_does_not_name() {
         let input = serde_json::json!({

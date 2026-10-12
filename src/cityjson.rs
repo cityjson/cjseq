@@ -555,8 +555,6 @@ pub enum CityJSONFeatureType {
 mod tests {
     use super::*;
 
-    /// Every public type in this crate derives `PartialEq`; `CityJSON` and
-    /// `CityJSONFeature` were missing it.
     #[test]
     fn cityjson_feature_with_equal_fields_is_equal() {
         let input = serde_json::json!({

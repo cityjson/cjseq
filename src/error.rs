@@ -2,18 +2,13 @@ use crate::geometry::GeometryType;
 use std::fmt;
 
 /// The crate's error type.
-///
-/// Implemented by hand: this crate does not hand-write serde impls, and it
-/// does not take a derive dependency for its error type either.
 #[derive(Debug)]
 pub enum CjseqError {
     /// A value was not the JSON the type expected, and nothing more specific
     /// could be said about why.
     Json(serde_json::Error),
-    /// A geometry's `boundaries` were nested to a depth its `type` does not
-    /// allow. serde reports this as "invalid type: integer, expected a
-    /// sequence", which names neither the geometry nor the depth it wanted;
-    /// this variant names both.
+    /// A geometry's `boundaries` are nested to a depth its `type` does not
+    /// allow; see [`crate::Geometry::from_json_value`].
     GeometryDepth {
         geometry_type: GeometryType,
         /// The nesting depth the geometry type requires.
@@ -23,13 +18,10 @@ pub enum CjseqError {
     },
     /// An I/O operation failed, eg opening or reading a CityJSON(Seq) file.
     Io(std::io::Error),
-    /// A document parsed as valid JSON, and every typed field on it parsed
-    /// fine, but it still fails a structural rule this crate enforces beyond
-    /// what serde alone can express -- eg its `type` is not `"CityJSON"`, or
-    /// its `version` is not one this crate supports.
+    /// A rule beyond what the types express, eg a material theme with both
+    /// `value` and `values`, or a malformed LoD or texture ring.
     Validation(String),
-    /// A City Object names, as one of its children, an id that is not in the
-    /// document.
+    /// A City Object (or a feature's `id`) refers to an id that is not there.
     DanglingReference {
         /// The City Object holding the reference.
         from: String,

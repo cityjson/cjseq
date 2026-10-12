@@ -131,19 +131,15 @@ fn nesting_depth(v: &Value) -> usize {
     }
 }
 
-/// A CityJSON geometry object.
+/// A CityJSON geometry object (§ 3).
 ///
-/// The nesting depth of `boundaries` is part of the type: a `MultiSurface`
-/// whose boundaries are nested one level too deep does not deserialize, where
-/// previously it decoded happily into an untyped `serde_json::Value` and left
-/// every consumer to guess the depth.
-///
-/// So is the nesting depth of semantics, material and texture `values`: each
-/// variant names its own value types, so values nested to the wrong depth for
-/// their geometry do not deserialize either.
+/// The nesting depth of `boundaries` is part of the type, and so is the depth
+/// of semantics, material and texture `values`: each variant names its own
+/// types, so boundaries or values nested to the wrong depth for the geometry
+/// type do not parse.
 ///
 /// Each variant has exactly the members the schema names for it, and the
-/// schema closes every geometry object, so any other member is rejected. A
+/// schema closes every geometry object, so any other member is an error. A
 /// MultiPoint or MultiLineString carries no material or texture.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -220,19 +216,13 @@ pub enum Geometry {
 }
 
 impl Geometry {
-    /// Parse a geometry, reporting a wrong `boundaries` depth in terms of the
-    /// geometry type rather than in terms of serde's innards.
-    ///
-    /// `serde_json::from_value::<Geometry>` works just as well and is what
-    /// `#[derive(Deserialize)]` gives every containing type; the only thing
-    /// this adds is a readable error. Deserializing a deeply nested `Vec`
-    /// otherwise fails with "invalid type: integer, expected a sequence",
-    /// which says neither which geometry was at fault nor what depth it
-    /// wanted.
+    /// Parse a geometry, reporting a wrong `boundaries` depth as a
+    /// [`CjseqError::GeometryDepth`] that names the geometry type and both
+    /// depths, where serde alone says "invalid type: integer, expected a
+    /// sequence".
     pub fn from_json_value(v: Value) -> Result<Geometry> {
-        //-- `&Value` is itself a Deserializer, so the happy path borrows `v`
-        //-- instead of deep-copying every boundary just to keep `v` alive for
-        //-- the error branch below.
+        //-- `&Value` is a Deserializer, so this borrows `v` rather than
+        //-- copying it
         let err = match Geometry::deserialize(&v) {
             Ok(g) => return Ok(g),
             Err(e) => e,
@@ -515,9 +505,8 @@ mod tests {
         assert_eq!(map.len(), 3);
     }
 
-    /// The same first-encounter renumbering, but at the deepest traversal the
-    /// enum has, so the flattening order of the 5-level variants is pinned too.
-    /// Expected values produced by the pre-rewrite implementation at a97bc2d.
+    /// The same renumbering at the deepest nesting, which pins the order the
+    /// 5-level variants are walked in.
     #[test]
     fn update_boundaries_compacts_indices_at_max_depth() {
         let mut g: Geometry = serde_json::from_value(serde_json::json!({
@@ -589,10 +578,8 @@ mod tests {
         );
     }
 
-    /// `update_material` renumbers `material.values` at the depth the geometry
-    /// type implies, and `null` holes (surfaces with no material) must survive
-    /// untouched. Expected values produced by the pre-rewrite implementation at
-    /// a97bc2d on this exact input.
+    /// `update_material` renumbers `values` at the depth the geometry type
+    /// implies, and leaves `null` entries alone.
     #[test]
     fn update_material_preserves_null_holes() {
         let mut g: Geometry = serde_json::from_value(serde_json::json!({
@@ -604,7 +591,6 @@ mod tests {
         let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
         g.update_material(&mut m_oldnew);
 
-        //-- as above: typed `values`, oracle expectations unchanged.
         let values = serde_json::to_value(&g).unwrap()["material"]["irradiation"]["values"].clone();
         assert_eq!(
             values,
@@ -617,9 +603,7 @@ mod tests {
         assert_eq!(m, vec![(0, 0), (2, 1)]);
     }
 
-    /// A raw serde error on a deeply nested `Vec` reads "invalid type:
-    /// integer, expected a sequence", which names neither the geometry nor the
-    /// depth it wanted. `from_json_value` must say both.
+    /// `from_json_value` names the geometry and both depths.
     #[test]
     fn wrong_depth_reports_which_geometry_and_which_depth() {
         let err = Geometry::from_json_value(serde_json::json!({

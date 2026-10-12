@@ -1,18 +1,8 @@
-//! Real-file round trips.
+//! Real-file round trips: every fixture is parsed, serialized and compared
+//! with its input, which catches any member the model drops.
 //!
-//! Every other test in this crate is synthetic: hand-built JSON literals
-//! written from the spec. These are the first tests that put the typed model
-//! in front of files nobody wrote for it. The shape matters: a reader
-//! compared against another reader's output can agree on the wrong answer
-//! (that is exactly how the two bugs motivating this rewrite stayed
-//! invisible), but a parse -> serialize -> compare cycle cannot hide a
-//! silently dropped member.
-//!
-//! Comparison is on parsed `serde_json::Value`s, not on strings: several
-//! members are backed by `HashMap` and have no stable serialization order, so
-//! a byte comparison would fail for reasons that are not data loss. `Value`
-//! equality is order-insensitive for object members and exact for everything
-//! else, which is the property this test wants.
+//! Comparison is on parsed `serde_json::Value`s, not on strings, so that
+//! number spelling (`0` vs `0.0`) is not mistaken for data loss.
 
 use cjseq::{CityJSON, CityJSONFeature};
 use serde_json::{Number, Value};
@@ -69,13 +59,11 @@ fn seq_fixtures() -> Vec<PathBuf> {
         //-- names at any depth (verified with an `object_pairs_hook` that
         //-- reports them). It is five structurally identical Building
         //-- features whose `grp` *attribute value* repeats -- a duplicate
-        //-- grouping case, not a duplicate-key case. It was briefly excluded
-        //-- on the strength of its filename; that was wrong.
+        //-- grouping case, not a duplicate-key case.
         "tests/data/duplicate_keys.city.jsonl",
         "tests/data/inferable_types.city.jsonl",
         "tests/data/long_strings.city.jsonl",
         "tests/data/single_feature.city.jsonl",
-        //-- already committed to this repo before this test existed
         "data/3dbag_b2.city.jsonl",
     ]
     .iter()
@@ -83,10 +71,8 @@ fn seq_fixtures() -> Vec<PathBuf> {
     .collect()
 }
 
-/// Fixtures in `tests/data/` deliberately left out of the round trip, each
-/// with the reason it cannot be round-tripped. Empty, and it should stay that
-/// way: a fixture that cannot survive a round trip is a finding, not a
-/// housekeeping detail.
+/// Fixtures in `tests/data/` left out of the round trip, each with the
+/// reason. Empty, and it should stay that way.
 const EXCLUDED: &[(&str, &str)] = &[];
 
 /// Whole-document CityJSON fixtures (not a sequence).

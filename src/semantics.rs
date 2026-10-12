@@ -4,10 +4,8 @@ use crate::index::{MultiSolidValues, SolidValues};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// The known surface types the spec assigns to Building-, WaterBody-, and
-/// Transportation-family City Objects (§ 3.3 Semantics of geometric
-/// primitives). Every variant is a unit variant already spelled exactly as
-/// the spec requires, so each serializes as its bare name.
+/// The semantic surface types the spec defines (§ 3.3), each serialized as
+/// its name.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KnownSemanticSurfaceType {
     RoofSurface,
@@ -30,24 +28,15 @@ pub enum KnownSemanticSurfaceType {
     TransportationHole,
 }
 
-/// The `type` member of a Semantic Object (§ 3.3 Semantics of geometric
-/// primitives).
+/// The `type` of a semantic surface (§ 3.3): a known type, or an Extension
+/// type, which starts with `+` (eg `"+ThermalSurface"`, § 8.5) and is kept
+/// verbatim. In JSON it is a string; a string that is neither a known name nor
+/// `+` followed by a name is an error.
 ///
-/// `Known` covers the surface types above. Any other value is a CityJSON
-/// Extension semantic surface, which the spec requires to start with `"+"`
-/// (eg `"+ThermalSurface"`, § 8.5); `Extension` carries that string verbatim
-/// so it round-trips byte for byte.
+/// # Matching
 ///
-/// As with [`crate::CityObjectType`], it is a plain string in JSON, and a
-/// string that is neither a known name nor `+` followed by a name is an
-/// error.
-///
-/// # Match on the value, not on a reference
-///
-/// Each known name is also available flat, as an associated `const` (eg
-/// [`SemanticSurfaceType::RoofSurface`]) -- see the `impl` block below for
-/// the full list. They are `const`s, not variants, and that distinction bites
-/// exactly once, silently:
+/// Each known type is also an associated `const` ([`SemanticSurfaceType::RoofSurface`]
+/// and so on). Match on a value, not a reference:
 ///
 /// ```
 /// # use cjseq::SemanticSurfaceType;
@@ -59,28 +48,17 @@ pub enum KnownSemanticSurfaceType {
 /// }
 /// ```
 ///
-/// Note the `*`. `match t` where `t: &SemanticSurfaceType`, or `match &t`, is
-/// `E0308` ("mismatched types"), and rustc's fix-it suggests renaming the arm
-/// to a fresh binding -- which compiles, and silently turns that arm into a
-/// catch-all matching everything, because `RoofSurface` in pattern position
-/// reads as a new irrefutable binding rather than as the constant. The `_`
-/// arm is still required: `Known` and `Extension` are the real variants, so
-/// the known names alone are not exhaustive.
+/// Without the `*` the match does not compile, and the fix rustc suggests
+/// turns the `RoofSurface` arm into a binding that matches everything. The `_`
+/// arm is needed because the real variants are `Known` and `Extension`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(try_from = "String", into = "String")]
 pub enum SemanticSurfaceType {
     Known(KnownSemanticSurfaceType),
-    /// Not a core CityJSON semantic surface type: a CityJSON Extension
-    /// surface type, always spelled with a leading `"+"`.
+    /// An Extension type, with its leading `+`.
     Extension(String),
 }
 
-/// Flat, spec-spelling access to each known variant (eg
-/// `SemanticSurfaceType::RoofSurface`); see [`crate::CityObjectType`]'s
-/// equivalent block for why these are associated `const`s rather than enum
-/// variants -- and, on
-/// [`SemanticSurfaceType`][SemanticSurfaceType#match-on-the-value-not-on-a-reference],
-/// for why they must be matched on a value rather than on a reference.
 impl TryFrom<String> for SemanticSurfaceType {
     type Error = crate::error::CjseqError;
     /// A known name, or an Extension name: `+` followed by at least one
@@ -111,6 +89,8 @@ impl From<SemanticSurfaceType> for String {
     }
 }
 
+/// Each known type as a constant, spelled as in the spec; see
+/// [`SemanticSurfaceType`] on matching them.
 #[allow(non_upper_case_globals)]
 impl SemanticSurfaceType {
     pub const RoofSurface: SemanticSurfaceType =
@@ -206,11 +186,7 @@ impl<V: Indices<SurfaceIndex>> Indices<SurfaceIndex> for Semantics<V> {
 mod tests {
     use super::*;
 
-    /// The `semantics` object names `surfaces` and `values` and declares no
-    /// `additionalProperties: false` -- unlike the geometry object that
-    /// contains it, which does -- so a further member is legal CityJSON and
-    /// must not vanish. `SemanticsSurface` already kept its extras; the
-    /// enclosing `Semantics` did not.
+    /// The `semantics` object is open, so members it does not name are kept.
     #[test]
     fn semantics_keeps_members_the_schema_does_not_name() {
         let input = serde_json::json!({
@@ -255,20 +231,13 @@ mod tests {
             "surfaces": [{"type": "RoofSurface"}], "values": [null, 0]
         }))
         .unwrap();
-        // Must be `null`, never `[]` -- see finding #7.
+        //-- `null`, never `[]`
         assert_eq!(
             serde_json::to_value(&s).unwrap()["values"],
             serde_json::json!([null, 0])
         );
     }
 
-    /// develop's 6917631 added `Eq` (alongside `PartialEq`) to
-    /// `SemanticsSurface`/`Semantics`. `SemanticsSurface.other` is
-    /// `HashMap<String, serde_json::Value>`, and this serde_json version
-    /// (1.0.151) implements `Eq` for both `Number` (`impl Eq for N {}`,
-    /// `src/number.rs:50` -- sound because a JSON number can never be NaN)
-    /// and `Value` (`#[derive(Clone, Eq, PartialEq, Hash)]`,
-    /// `src/value/mod.rs:115`), so nothing here actually blocks `Eq`.
     #[test]
     fn semantics_surface_and_semantics_implement_eq() {
         fn assert_impls_eq<T: Eq>() {}
@@ -276,8 +245,7 @@ mod tests {
         assert_impls_eq::<Semantics>();
     }
 
-    /// A semantic surface may carry a hierarchy and arbitrary extra members;
-    /// both must survive a round-trip byte for byte.
+    /// A semantic surface's hierarchy and extra members round-trip.
     #[test]
     fn surface_extras_and_hierarchy_round_trip() {
         let input = serde_json::json!({
@@ -298,13 +266,7 @@ mod tests {
         assert_eq!(serde_json::to_value(&s).unwrap(), input);
     }
 
-    /// develop's aff25a1 made `SemanticsSurface.other` an
-    /// `Option<serde_json::Value>` specifically so a surface with no extra
-    /// members serializes without an empty placeholder. Task 3 reaches the
-    /// same outcome a different way: `other` is a plain (non-`Option`)
-    /// `HashMap<String, Value>`, and `#[serde(flatten)]` on an empty map
-    /// contributes zero keys, so a surface with nothing extra round-trips
-    /// with no spurious members either way -- no `Option` wrapper needed.
+    /// With no extra members, none are written.
     #[test]
     fn surface_with_no_extras_round_trips_without_spurious_members() {
         let input = serde_json::json!({
@@ -316,9 +278,8 @@ mod tests {
         assert_eq!(serde_json::to_value(&s).unwrap(), input);
     }
 
-    /// `values` is required by the schema but may be `null`. It must parse,
-    /// and it must be written back out as `null` — dropping the member
-    /// entirely would violate `"required": ["surfaces", "values"]`.
+    /// `values` is required but may be `null`, so a `null` is written back, not
+    /// dropped.
     #[test]
     fn a_null_semantics_values_member_round_trips() {
         let input = serde_json::json!({
@@ -330,9 +291,6 @@ mod tests {
         assert_eq!(serde_json::to_value(&s).unwrap(), input);
     }
 
-    /// Extension semantic surfaces (`"+ThermalSurface"`, `"+PatioDoor"`, ...)
-    /// must survive a round trip with their leading `+` intact -- mirrors the
-    /// `CityObjectType` extension-round-trip requirement, but for surfaces.
     #[test]
     fn extension_semantic_surface_type_roundtrips_with_its_plus() {
         let t: SemanticSurfaceType =
@@ -352,19 +310,8 @@ mod tests {
         assert_ne!(t, SemanticSurfaceType::RoofSurface);
     }
 
-    /// Mirrors `city_object::tests::extension_typed_city_object_roundtrips_byte_for_byte_inside_a_feature`:
-    /// the bare-`SemanticSurfaceType` tests above never exercise the flatten
-    /// path an extension surface actually sits behind in practice -- a
-    /// `SemanticsSurface` nested inside a real `Geometry`'s `semantics`
-    /// member. Asserts on the serialized *string*, not a re-parsed `Value`,
-    /// so a change to `other`/flatten handling would fail this even with an
-    /// otherwise-green suite.
-    ///
-    /// `"azimuth"` (lifted from the spec's own `"+ThermalSurface"` example,
-    /// § 8.5) is the one extra, genuinely unrecognized member landing in
-    /// `#[serde(flatten)] other: HashMap<String, Value>`; kept to exactly
-    /// one key since that `HashMap` has no stable iteration order once it
-    /// holds two or more.
+    /// An Extension surface with an extra member, inside a geometry, round-trips
+    /// byte for byte.
     #[test]
     fn extension_typed_semantics_surface_roundtrips_byte_for_byte_inside_a_geometry() {
         let input = concat!(
@@ -380,8 +327,7 @@ mod tests {
         );
     }
 
-    /// Every known SemanticSurfaceType name round-trips through its own unit
-    /// variant, not through Extension.
+    /// Every known name parses to its own variant, not to `Extension`.
     #[test]
     fn every_known_semantic_surface_type_round_trips_as_its_unit_variant() {
         let known: &[(&str, SemanticSurfaceType)] = &[

@@ -15,7 +15,7 @@ fn multisurface_accepts_three_levels() {
 
 #[test]
 fn multisurface_rejects_solid_depth() {
-    // One level too deep for a MultiSurface. Previously decoded happily.
+    //-- one level too deep for a MultiSurface
     let r: Result<Geometry, _> = serde_json::from_value(serde_json::json!({
         "type": "MultiSurface", "lod": "2",
         "boundaries": [[[[0, 3, 2, 1]]]]
