@@ -237,15 +237,6 @@ impl CityObject {
             None => true,
         }
     }
-    pub(crate) fn get_children_keys(&self) -> Vec<String> {
-        let mut re: Vec<String> = Vec::new();
-        if let Some(x) = &self.children {
-            for each in x {
-                re.push(each.to_string());
-            }
-        }
-        re
-    }
 }
 
 #[cfg(test)]

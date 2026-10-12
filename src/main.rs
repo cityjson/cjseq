@@ -27,6 +27,8 @@ struct Cli {
 
 #[derive(Clone, ValueEnum)]
 pub enum SortingStrategy {
+    /// The order of the input
+    AsIs,
     Random,
     Lexicographical,
 }
@@ -78,7 +80,8 @@ fn main() {
     match &cli.command {
         //-- cat
         Commands::Cat { file, order } => {
-            let o2 = match order.clone().unwrap_or(SortingStrategy::Random) {
+            let o2 = match order.clone().unwrap_or(SortingStrategy::AsIs) {
+                SortingStrategy::AsIs => cjseq::SortingStrategy::AsIs,
                 SortingStrategy::Random => cjseq::SortingStrategy::Random,
                 SortingStrategy::Lexicographical => cjseq::SortingStrategy::Lexicographical,
             };
@@ -218,11 +221,13 @@ fn filter_bbox(exclude: bool, bbox: &[f64]) -> Result<()> {
                 cj = CityJSON::from_str(&l)?;
             } else {
                 let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-                let ci = cjf.centroid();
-                let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
-                let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
-                if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
-                    w = true;
+                //-- a feature with no vertices is nowhere, so never inside
+                if let Some(ci) = cjf.centroid() {
+                    let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
+                    let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
+                    if (cx > bbox[0]) && (cx < bbox[2]) && (cy > bbox[1]) && (cy < bbox[3]) {
+                        w = true;
+                    }
                 }
                 if (w && !exclude) || (!w && exclude) {
                     io::stdout().write_all(format!("{}\n", l).as_bytes())?;
@@ -245,12 +250,14 @@ fn filter_radius(exclude: bool, x: f64, y: f64, r: f64) -> Result<()> {
                 cj = CityJSON::from_str(&l)?;
             } else {
                 let cjf: CityJSONFeature = CityJSONFeature::from_str(&l)?;
-                let ci = cjf.centroid();
-                let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
-                let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
-                let d2 = (cx - x).powf(2.0) + (cy - y).powf(2.0);
-                if d2 <= (r * r) {
-                    w = true;
+                //-- a feature with no vertices is nowhere, so never inside
+                if let Some(ci) = cjf.centroid() {
+                    let cx = (ci[0] * cj.transform.scale[0]) + cj.transform.translate[0];
+                    let cy = (ci[1] * cj.transform.scale[1]) + cj.transform.translate[1];
+                    let d2 = (cx - x).powf(2.0) + (cy - y).powf(2.0);
+                    if d2 <= (r * r) {
+                        w = true;
+                    }
                 }
                 if (w && !exclude) || (!w && exclude) {
                     io::stdout().write_all(format!("{}\n", l).as_bytes())?;
@@ -363,7 +370,7 @@ fn cat(cjj: &mut CityJSON, order: cjseq::SortingStrategy) -> Result<()> {
     io::stdout().write_all(format!("{}\n", serde_json::to_string(&cj1).unwrap()).as_bytes())?;
     //-- the other lines for each CityJSONSeq
     let mut i: usize = 0;
-    while let Some(cjf) = cjj.get_cjfeature(i) {
+    while let Some(cjf) = cjj.get_cjfeature(i)? {
         i += 1;
         io::stdout().write_all(format!("{}\n", serde_json::to_string(&cjf).unwrap()).as_bytes())?;
     }

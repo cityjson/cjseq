@@ -28,6 +28,30 @@ pub enum CjseqError {
     /// what serde alone can express -- eg its `type` is not `"CityJSON"`, or
     /// its `version` is not one this crate supports.
     Validation(String),
+    /// A City Object names, as one of its children, an id that is not in the
+    /// document.
+    DanglingReference {
+        /// The City Object holding the reference.
+        from: String,
+        /// The id it refers to.
+        to: String,
+    },
+    /// An index points past the end of the array it indexes.
+    IndexOutOfRange {
+        kind: IndexKind,
+        index: usize,
+        /// The length of the array indexed.
+        len: usize,
+    },
+}
+
+/// What an out-of-range index was indexing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexKind {
+    Vertex,
+    TextureVertex,
+    Material,
+    Texture,
 }
 
 impl fmt::Display for CjseqError {
@@ -44,6 +68,13 @@ impl fmt::Display for CjseqError {
             ),
             CjseqError::Io(e) => write!(f, "I/O error: {e}"),
             CjseqError::Validation(msg) => write!(f, "invalid CityJSON: {msg}"),
+            CjseqError::DanglingReference { from, to } => write!(
+                f,
+                "City Object {from:?} refers to {to:?}, which is not in the document"
+            ),
+            CjseqError::IndexOutOfRange { kind, index, len } => {
+                write!(f, "{kind:?} index {index} is out of range (there are {len})")
+            }
         }
     }
 }
@@ -54,7 +85,9 @@ impl std::error::Error for CjseqError {
             CjseqError::Json(e) => Some(e),
             CjseqError::GeometryDepth { .. } => None,
             CjseqError::Io(e) => Some(e),
-            CjseqError::Validation(_) => None,
+            CjseqError::Validation(_)
+            | CjseqError::DanglingReference { .. }
+            | CjseqError::IndexOutOfRange { .. } => None,
         }
     }
 }

@@ -46,7 +46,7 @@ fn empty() {
     let j = get_empty_file();
     let cjj = CityJSON::from_str(&j.to_string()).unwrap();
     assert!(cjj.number_of_city_objects() == 0);
-    assert!(cjj.get_cjfeature(0).is_none());
+    assert!(cjj.get_cjfeature(0).unwrap().is_none());
 }
 
 #[test]
@@ -63,10 +63,10 @@ fn basic_reading_of_cj() {
     assert!(cj1.vertices.is_empty());
 
     cjj.sort_cjfeatures(cjseq::SortingStrategy::Lexicographical);
-    let mut cjnext = cjj.get_cjfeature(0).unwrap();
+    let mut cjnext = cjj.get_cjfeature(0).unwrap().unwrap();
     assert_eq!(cjnext.thetype, cjseq::CityJSONFeatureType::CityJSONFeature);
     assert_eq!(cjnext.id, "NL.IMBAG.Pand.0503100000028341");
 
-    cjnext = cjj.get_cjfeature(1).unwrap();
+    cjnext = cjj.get_cjfeature(1).unwrap().unwrap();
     assert_eq!(cjnext.id, "NL.IMBAG.Pand.0503100000031927");
 }

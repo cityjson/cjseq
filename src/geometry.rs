@@ -1,6 +1,7 @@
 use crate::appearance::{MaterialReference, TextureReference};
 use crate::error::{CjseqError, Result};
 use crate::semantics::Semantics;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -47,9 +48,9 @@ pub struct GeometryCommon {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantics: Option<Semantics>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub material: Option<HashMap<String, MaterialReference>>,
+    pub material: Option<IndexMap<String, MaterialReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub texture: Option<HashMap<String, TextureReference>>,
+    pub texture: Option<IndexMap<String, TextureReference>>,
 }
 
 /// The number of array levels between `v` and the deepest non-array value
@@ -120,7 +121,8 @@ pub enum Geometry {
         common: GeometryCommon,
     },
     GeometryInstance {
-        boundaries: Ring,
+        /// The one vertex the template is placed at.
+        boundaries: [usize; 1],
         template: usize,
         #[serde(rename = "transformationMatrix")]
         transformation_matrix: [f64; 16],
@@ -224,8 +226,8 @@ impl Geometry {
     /// variant, so no runtime inspection of the boundaries is needed.
     fn boundary_indices_mut(&mut self) -> Box<dyn Iterator<Item = &mut usize> + '_> {
         match self {
-            Geometry::MultiPoint { boundaries, .. }
-            | Geometry::GeometryInstance { boundaries, .. } => Box::new(boundaries.iter_mut()),
+            Geometry::MultiPoint { boundaries, .. } => Box::new(boundaries.iter_mut()),
+            Geometry::GeometryInstance { boundaries, .. } => Box::new(boundaries.iter_mut()),
             Geometry::MultiLineString { boundaries, .. } => {
                 Box::new(boundaries.iter_mut().flatten())
             }
@@ -337,8 +339,10 @@ impl Geometry {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GeometryTemplates {
     pub templates: Vec<Geometry>,
+    /// Real coordinates, not transformed integers: templates are placed by
+    /// their instances' transformation matrices.
     #[serde(rename = "vertices-templates")]
-    pub vertices_templates: Value,
+    pub vertices_templates: Vec<[f64; 3]>,
 }
 
 #[cfg(test)]

@@ -7,14 +7,14 @@ const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Transform {
-    pub scale: Vec<f64>,
-    pub translate: Vec<f64>,
+    pub scale: [f64; 3],
+    pub translate: [f64; 3],
 }
 impl Transform {
     pub(crate) fn new() -> Self {
         Transform {
-            scale: vec![1.0, 1.0, 1.0],
-            translate: vec![0., 0., 0.],
+            scale: [1.0, 1.0, 1.0],
+            translate: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -266,7 +266,7 @@ mod tests {
         let b = Transform::new();
         assert_eq!(a, b);
         let mut c = Transform::new();
-        c.translate = vec![1.0, 0.0, 0.0];
+        c.translate = [1.0, 0.0, 0.0];
         assert_ne!(a, c);
     }
 

@@ -101,7 +101,7 @@ fn slicing_a_feature_out_keeps_only_the_uvs_it_uses() {
     let cj = cjseq_to_cj(header(), vec![feature("a", &uvs, &[[4, 1, 2]])]);
     let cj = CityJSON::from_str(&serde_json::to_string(&cj).unwrap()).unwrap();
 
-    let f = cj.get_cjfeature(0).unwrap();
+    let f = cj.get_cjfeature(0).unwrap().unwrap();
     let app = f.appearance.as_ref().unwrap();
     assert_eq!(
         app.vertices_texture.as_deref(),
@@ -126,7 +126,7 @@ fn a_cat_then_collect_round_trip_keeps_every_uv() {
     let mut doc = CityJSON::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
     doc.sort_cjfeatures(cjseq::SortingStrategy::Lexicographical);
     let mut features = Vec::new();
-    while let Some(f) = doc.get_cjfeature(features.len()) {
+    while let Some(f) = doc.get_cjfeature(features.len()).unwrap() {
         features.push(f);
     }
     let back = cjseq_to_cj(doc.get_metadata(), features);

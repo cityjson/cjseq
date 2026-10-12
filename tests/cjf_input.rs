@@ -18,7 +18,7 @@ fn test1() {
                 if i == 0 {
                     cjj = CityJSON::from_str(l).unwrap();
                     assert!(cjj.number_of_city_objects() == 0);
-                    assert!(cjj.get_cjfeature(0).is_none());
+                    assert!(cjj.get_cjfeature(0).unwrap().is_none());
                     assert!(cjj.vertices.is_empty());
                 } else {
                     let mut cjf: CityJSONFeature = CityJSONFeature::from_str(l).unwrap();

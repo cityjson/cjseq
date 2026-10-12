@@ -32,7 +32,7 @@ pub use cityjson::*;
 //-- `std::result::Result` in the importing module -- a surprise this crate has
 //-- no business inflicting on its callers. `CjseqError` is re-exported by
 //-- name; the alias stays reachable as `cjseq::error::Result`.
-pub use error::CjseqError;
+pub use error::{CjseqError, IndexKind};
 pub use geometry::*;
 pub use metadata::*;
 pub use semantics::*;

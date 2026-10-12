@@ -1,37 +1,72 @@
 use crate::appearance::{Appearance, MaterialObject, TextureObject};
 use crate::city_object::CityObject;
-use crate::error::{CjseqError, Result};
+use crate::error::{CjseqError, IndexKind, Result};
 use crate::geometry::GeometryTemplates;
 use crate::metadata::{Metadata, Transform};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-/// Slice a document-level appearance palette down to the entries one feature
-/// uses, in the order that feature now refers to them.
+/// One vertex: integer coordinates, to be scaled and translated by the
+/// document's [`Transform`].
+pub type Vertex = [i64; 3];
+
+/// Slice a palette down to the entries one feature uses, in the order that
+/// feature now refers to them.
 ///
 /// `oldnew` maps each index used by the feature onto its dense position in the
 /// new palette; `update_material`/`update_texture` build it by handing out
 /// consecutive new indices, so its values are exactly `0..oldnew.len()` and
 /// sorting by them reproduces the palette.
-///
-/// This replaces a `resize(len, json!(null))`-then-overwrite loop, which only
-/// worked because every slot was subsequently overwritten: the `null` filler
-/// was never a valid palette entry, and now that the palette is typed it is
-/// not even representable.
-fn reindex<T: Clone>(all: &[T], oldnew: &HashMap<usize, usize>) -> Vec<T> {
+fn reindex<T: Clone>(all: &[T], oldnew: &HashMap<usize, usize>, kind: IndexKind) -> Result<Vec<T>> {
     let mut pairs: Vec<(usize, usize)> = oldnew.iter().map(|(o, n)| (*n, *o)).collect();
     pairs.sort_unstable();
-    pairs.into_iter().map(|(_, old)| all[old].clone()).collect()
+    pairs
+        .into_iter()
+        .map(|(_, old)| {
+            all.get(old).cloned().ok_or(CjseqError::IndexOutOfRange {
+                kind,
+                index: old,
+                len: all.len(),
+            })
+        })
+        .collect()
 }
 
-#[derive(Clone)]
+/// The part of `all` that the renumbering maps `m_oldnew`, `t_oldnew` and
+/// `t_v_oldnew` refer to, with the default themes carried over.
+fn slice_appearance(
+    all: &Appearance,
+    m_oldnew: &HashMap<usize, usize>,
+    t_oldnew: &HashMap<usize, usize>,
+    t_v_oldnew: &HashMap<usize, usize>,
+) -> Result<Appearance> {
+    let mut a = Appearance::new();
+    a.default_theme_material = all.default_theme_material.clone();
+    a.default_theme_texture = all.default_theme_texture.clone();
+    if let Some(m) = &all.materials {
+        a.materials = Some(reindex(m, m_oldnew, IndexKind::Material)?);
+    }
+    if let Some(t) = &all.textures {
+        a.textures = Some(reindex(t, t_oldnew, IndexKind::Texture)?);
+    }
+    if let Some(tv) = &all.vertices_texture {
+        a.vertices_texture = Some(reindex(tv, t_v_oldnew, IndexKind::TextureVertex)?);
+    }
+    Ok(a)
+}
+
+/// The order in which [`CityJSON::get_cjfeature`] hands out features.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortingStrategy {
+    /// The order the top-level City Objects appear in the document.
+    AsIs,
+    /// A random permutation, different on every call.
     Random,
+    /// Sorted by City Object id.
     Lexicographical,
-    Morton,  //-- TODO implement Morton sorting
-    Hilbert, //-- TODO implement Hilbert sorting
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -41,8 +76,8 @@ pub struct CityJSON {
     pub version: String,
     pub transform: Transform,
     #[serde(rename = "CityObjects")]
-    pub city_objects: HashMap<String, CityObject>,
-    pub vertices: Vec<Vec<i64>>,
+    pub city_objects: IndexMap<String, CityObject>,
+    pub vertices: Vec<Vertex>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,18 +95,8 @@ pub struct CityJSON {
     transform_correction: Option<Transform>,
 }
 
-/// Hand-written rather than derived: `sorted_ids` and `transform_correction`
-/// are `#[serde(skip)]` internal bookkeeping, not part of the CityJSON
-/// document. `sorted_ids` in particular is populated by iterating
-/// `city_objects` (a `HashMap`, whose iteration order is not guaranteed
-/// stable across independently-constructed maps) and can be further
-/// reordered by `sort_cjfeatures(SortingStrategy::Random)`, so a derived
-/// `PartialEq` that included it would make `==` spuriously `false` for two
-/// values representing the identical document. Excluding it here is what
-/// makes equality mean "same document", which is the only sense of equality
-/// this crate (or its callers) should ever want. This does not violate the
-/// "never hand-write" constraint, which is about `Serialize`/`Deserialize`
-/// -- a hand-written `PartialEq` cannot corrupt output.
+/// Equality is over the document only: `sorted_ids` and
+/// `transform_correction` are sequencing state, not CityJSON members.
 impl PartialEq for CityJSON {
     fn eq(&self, other: &Self) -> bool {
         self.thetype == other.thetype
@@ -95,15 +120,11 @@ impl Default for CityJSON {
 
 impl FromStr for CityJSON {
     type Err = CjseqError;
-    /// Parse a CityJSON document.
+    /// Parse a CityJSON document. Its features are handed out in document
+    /// order until [`CityJSON::sort_cjfeatures`] says otherwise.
     fn from_str(s: &str) -> Result<Self> {
         let mut cjj: CityJSON = serde_json::from_str(s)?;
-        //-- check if CO exists, then add them to the sorted_ids
-        for (key, co) in &cjj.city_objects {
-            if co.is_toplevel() {
-                cjj.sorted_ids.push(key.clone());
-            }
-        }
+        cjj.sort_cjfeatures(SortingStrategy::AsIs);
         Ok(cjj)
     }
 }
@@ -111,15 +132,12 @@ impl FromStr for CityJSON {
 impl CityJSON {
     /// Create a new CityJSON instance with default values.
     pub fn new() -> Self {
-        let co: HashMap<String, CityObject> = HashMap::new();
-        let v: Vec<Vec<i64>> = Vec::new();
-        let tr = Transform::new();
         CityJSON {
             thetype: CityJSONType::CityJSON,
             version: "2.0".to_string(),
-            transform: tr,
-            city_objects: co,
-            vertices: v,
+            transform: Transform::new(),
+            city_objects: IndexMap::new(),
+            vertices: Vec::new(),
             metadata: None,
             appearance: None,
             geometry_templates: None,
@@ -131,15 +149,13 @@ impl CityJSON {
     }
     /// Get the "first line" (aka metadata or header) of a CityJSONSeq
     pub fn get_metadata(&self) -> Self {
-        let co: HashMap<String, CityObject> = HashMap::new();
-        let v: Vec<Vec<i64>> = Vec::new();
         let mut cj0 = CityJSON {
             thetype: self.thetype.clone(),
             version: self.version.clone(),
             transform: self.transform.clone(),
             metadata: self.metadata.clone(),
-            city_objects: co,
-            vertices: v,
+            city_objects: IndexMap::new(),
+            vertices: Vec::new(),
             appearance: None,
             geometry_templates: self.geometry_templates.clone(),
             other: self.other.clone(),
@@ -158,88 +174,69 @@ impl CityJSON {
                 g.update_material(&mut m_oldnew);
                 g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
             }
-            //-- "slice" materials
             if let Some(a) = &self.appearance {
-                let mut acjf: Appearance = Appearance::new();
-                acjf.default_theme_material = a.default_theme_material.clone();
-                acjf.default_theme_texture = a.default_theme_texture.clone();
-                if let Some(am) = a.materials.as_ref() {
-                    acjf.materials = Some(reindex(am, &m_oldnew));
-                }
-                if let Some(at) = a.textures.as_ref() {
-                    acjf.textures = Some(reindex(at, &t_oldnew));
-                }
-                if let Some(atv) = a.vertices_texture.as_ref() {
-                    acjf.vertices_texture = Some(reindex(atv, &t_v_oldnew));
-                }
-                cj0.appearance = Some(acjf);
+                cj0.appearance = slice_appearance(a, &m_oldnew, &t_oldnew, &t_v_oldnew).ok();
             }
         }
         cj0
     }
-    /// Getter for the features in a CityJSON dataset.
-    /// Starts at 0, and return Option::None if the index is out of bounds.
-    pub fn get_cjfeature(&self, i: usize) -> Option<CityJSONFeature> {
-        let i2 = self.sorted_ids.get(i);
-        i2?;
-        let obj = self.city_objects.get(i2.unwrap());
-        obj?;
-        let co = obj.unwrap();
-        //-- the other lines
+
+    /// The `i`th feature, in the order set by [`CityJSON::sort_cjfeatures`]:
+    /// a top-level City Object with all of its descendants, and only the
+    /// vertices and appearance entries they use.
+    ///
+    /// `Ok(None)` once `i` is past the last feature. A child id that names no
+    /// City Object, or an index past the end of `vertices` or of an appearance
+    /// palette, is an error.
+    pub fn get_cjfeature(&self, i: usize) -> Result<Option<CityJSONFeature>> {
+        let Some(id) = self.sorted_ids.get(i) else {
+            return Ok(None);
+        };
+        let Some(root) = self.city_objects.get(id) else {
+            return Ok(None);
+        };
+        //-- the root, then every descendant depth-first; `seen` stops a
+        //-- parent/child cycle from looping
+        let mut members: Vec<(&String, &CityObject)> = vec![(id, root)];
+        let mut seen: HashSet<&str> = HashSet::from([id.as_str()]);
+        let mut next = 0;
+        while next < members.len() {
+            let (parent_id, parent) = members[next];
+            next += 1;
+            for child_id in parent.children.iter().flatten() {
+                if !seen.insert(child_id.as_str()) {
+                    continue;
+                }
+                let child = self.city_objects.get(child_id).ok_or_else(|| {
+                    CjseqError::DanglingReference {
+                        from: parent_id.clone(),
+                        to: child_id.clone(),
+                    }
+                })?;
+                members.push((child_id, child));
+            }
+        }
+
         let mut cjf = CityJSONFeature::new();
-        let mut co2: CityObject = co.clone();
+        cjf.id = id.clone();
         let mut g_vi_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut m_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_oldnew: HashMap<usize, usize> = HashMap::new();
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
-        if let Some(x) = &mut co2.geometry {
-            for g in x.iter_mut() {
+        for (key, co) in members {
+            let mut co2 = co.clone();
+            for g in co2.geometry.iter_mut().flatten() {
                 g.update_geometry_boundaries(&mut g_vi_oldnew);
                 g.update_material(&mut m_oldnew);
                 g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
             }
+            cjf.add_co(key.clone(), co2);
         }
-        cjf.add_co(self.sorted_ids[i].clone(), co2);
-        cjf.id = self.sorted_ids[i].to_string();
-        //-- TODO: to fix: children-of-children?
-        //-- process all the children (only one-level lower)
-        for childkey in co.get_children_keys() {
-            let coc = self.city_objects.get(&childkey).unwrap();
-            let mut coc2: CityObject = coc.clone();
-            if let Some(x) = &mut coc2.geometry {
-                for g in x.iter_mut() {
-                    g.update_geometry_boundaries(&mut g_vi_oldnew);
-                    g.update_material(&mut m_oldnew);
-                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
-                }
-            }
-            cjf.add_co(childkey.clone(), coc2);
-        }
-        //-- "slice" geometry vertices
-        let allvertices = &self.vertices;
-        let mut g_new_vertices: Vec<Vec<i64>> = Vec::new();
-        g_new_vertices.resize(g_vi_oldnew.len(), vec![]);
-        for (old, new) in &g_vi_oldnew {
-            g_new_vertices[*new] = allvertices[*old].clone();
-        }
-        cjf.vertices = g_new_vertices;
-        //-- "slice" materials
+        cjf.vertices = reindex(&self.vertices, &g_vi_oldnew, IndexKind::Vertex)?;
         if let Some(a) = &self.appearance {
-            let mut acjf: Appearance = Appearance::new();
-            acjf.default_theme_material = a.default_theme_material.clone();
-            acjf.default_theme_texture = a.default_theme_texture.clone();
-            if let Some(am) = a.materials.as_ref() {
-                acjf.materials = Some(reindex(am, &m_oldnew));
-            }
-            if let Some(at) = a.textures.as_ref() {
-                acjf.textures = Some(reindex(at, &t_oldnew));
-            }
-            if let Some(atv) = a.vertices_texture.as_ref() {
-                acjf.vertices_texture = Some(reindex(atv, &t_v_oldnew));
-            }
-            cjf.appearance = Some(acjf);
+            cjf.appearance = Some(slice_appearance(a, &m_oldnew, &t_oldnew, &t_v_oldnew)?);
         }
-        Some(cjf)
+        Ok(Some(cjf))
     }
     /// Used when many CityJSONSeq are used, the "transform" can
     /// be modified (the new value is a "correction").
@@ -279,195 +276,146 @@ impl CityJSON {
         }
 
         for (key, co) in &mut cjf.city_objects {
-            //-- boundaries
-            if let Some(ref mut geoms) = &mut co.geometry {
-                for g in geoms.iter_mut() {
-                    //-- boundaries
-                    g.offset_geometry_boundaries(g_offset);
-                    // g.update_geometry_boundaries(&mut g_oldnew, g_offset);
-                    //-- material
-                    g.update_material(&mut m_oldnew);
-                    //-- texture
-                    g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
-                }
+            for g in co.geometry.iter_mut().flatten() {
+                g.offset_geometry_boundaries(g_offset);
+                g.update_material(&mut m_oldnew);
+                g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
             }
-            //-- update the collected json object by adding the CityObjects
             self.add_co(key.to_string(), co.clone());
         }
-        //-- add the new vertices
         self.add_vertices(&mut cjf.vertices);
-        //-- add the CO id to the list
         self.sorted_ids.push(cjf.id.clone());
     }
     pub fn remove_duplicate_vertices(&mut self) {
-        // let totalinput = self.vertices.len();
-        let mut h: HashMap<String, usize> = HashMap::new();
+        let mut h: HashMap<Vertex, usize> = HashMap::new();
         let mut newids: HashMap<usize, usize> = HashMap::new();
-        let mut newvertices: Vec<Vec<i64>> = Vec::new();
+        let mut newvertices: Vec<Vertex> = Vec::new();
         for (i, v) in self.vertices.iter().enumerate() {
-            // println!("{:?}", v);
-            let k = format!("{} {} {}", v[0], v[1], v[2]);
-            match h.get(&k) {
-                Some(x) => {
-                    let _ = newids.insert(i, *x);
-                }
-                None => {
-                    newids.insert(i, newvertices.len());
-                    h.insert(k.clone(), newvertices.len());
-                    newvertices.push(v.clone());
-                }
+            let new = *h.entry(*v).or_insert_with(|| {
+                newvertices.push(*v);
+                newvertices.len() - 1
+            });
+            newids.insert(i, new);
+        }
+        for co in self.city_objects.values_mut() {
+            for g in co.geometry.iter_mut().flatten() {
+                g.update_geometry_boundaries(&mut newids);
             }
         }
-        //-- update indices
-        let cos = &mut self.city_objects;
-        for (_key, co) in cos.iter_mut() {
-            if let Some(x) = &mut co.geometry {
-                for g in x.iter_mut() {
-                    g.update_geometry_boundaries(&mut newids);
-                }
-            }
-        }
-        //-- replace the vertices, innit?
         self.vertices = newvertices;
     }
-    pub fn update_geographicalextent(&mut self) {
-        if let Some(m) = &mut self.metadata {
-            if let Some(ref mut ge) = m.geographical_extent {
-                let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];
-                let mut maxs: Vec<i64> = vec![i64::MIN, i64::MIN, i64::MIN];
-                for v in &self.vertices {
-                    for i in 0..3 {
-                        if v[i] < mins[i] {
-                            mins[i] = v[i];
-                        }
-                        if v[i] > maxs[i] {
-                            maxs[i] = v[i];
-                        }
+    /// The per-axis minimum and maximum of `vertices`, or `None` if there are
+    /// none.
+    fn vertex_bounds(&self) -> Option<(Vertex, Vertex)> {
+        let first = *self.vertices.first()?;
+        Some(
+            self.vertices
+                .iter()
+                .fold((first, first), |(mut lo, mut hi), v| {
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(v[k]);
+                        hi[k] = hi[k].max(v[k]);
                     }
-                }
-                *ge = [
-                    mins[0] as f64 * self.transform.scale[0] + self.transform.translate[0],
-                    mins[1] as f64 * self.transform.scale[1] + self.transform.translate[1],
-                    mins[2] as f64 * self.transform.scale[2] + self.transform.translate[2],
-                    maxs[0] as f64 * self.transform.scale[0] + self.transform.translate[0],
-                    maxs[1] as f64 * self.transform.scale[1] + self.transform.translate[1],
-                    maxs[2] as f64 * self.transform.scale[2] + self.transform.translate[2],
-                ];
-            }
+                    (lo, hi)
+                }),
+        )
+    }
+    /// Recompute `metadata.geographicalExtent` from the vertices, if the
+    /// document has one. With no vertices it is left as it is.
+    pub fn update_geographicalextent(&mut self) {
+        let Some((mins, maxs)) = self.vertex_bounds() else {
+            return;
+        };
+        let t = &self.transform;
+        let real = |v: Vertex, k: usize| v[k] as f64 * t.scale[k] + t.translate[k];
+        if let Some(ge) = self
+            .metadata
+            .as_mut()
+            .and_then(|m| m.geographical_extent.as_mut())
+        {
+            *ge = [
+                real(mins, 0),
+                real(mins, 1),
+                real(mins, 2),
+                real(maxs, 0),
+                real(maxs, 1),
+                real(maxs, 2),
+            ];
         }
     }
+    /// Move `transform.translate` to the vertices' minimum corner, so the
+    /// stored integers start at 0. With no vertices nothing changes.
     pub fn update_transform(&mut self) {
-        let mut newvertices: Vec<Vec<i64>> = Vec::new();
-        let mut mins: Vec<i64> = vec![i64::MAX, i64::MAX, i64::MAX];
-        //-- find min-xyz
-        for v in &self.vertices {
-            for i in 0..3 {
-                if v[i] < mins[i] {
-                    mins[i] = v[i];
-                }
+        let Some((mins, _)) = self.vertex_bounds() else {
+            return;
+        };
+        for v in &mut self.vertices {
+            for (c, m) in v.iter_mut().zip(mins) {
+                *c -= m;
             }
         }
-        //-- subtract the mins from each vertex
-        for v in &self.vertices {
-            let v: Vec<i64> = vec![v[0] - mins[0], v[1] - mins[1], v[2] - mins[2]];
-            newvertices.push(v);
+        let t = &mut self.transform;
+        for ((tr, sc), m) in t.translate.iter_mut().zip(t.scale).zip(mins) {
+            *tr += m as f64 * sc;
         }
-        //-- replace the vertices, innit?
-        self.vertices = newvertices;
-        //-- update the transform/translate
-        let ttx = (mins[0] as f64 * self.transform.scale[0]) + self.transform.translate[0];
-        let tty = (mins[1] as f64 * self.transform.scale[1]) + self.transform.translate[1];
-        let ttz = (mins[2] as f64 * self.transform.scale[2]) + self.transform.translate[2];
-        self.transform.translate = vec![ttx, tty, ttz];
     }
     pub fn number_of_city_objects(&self) -> usize {
-        let mut total: usize = 0;
-        for co in self.city_objects.values() {
-            if co.is_toplevel() {
-                total += 1;
-            }
-        }
-        total
+        self.city_objects
+            .values()
+            .filter(|co| co.is_toplevel())
+            .count()
     }
-    /// When getting the CityJSONFeatures, this controls the order in which
-    /// they are returned. By default they are returned in the order they were added.
+    /// Set the order in which [`CityJSON::get_cjfeature`] hands out features.
     pub fn sort_cjfeatures(&mut self, ss: SortingStrategy) {
-        self.sorted_ids.clear();
+        self.sorted_ids = self
+            .city_objects
+            .iter()
+            .filter(|(_, co)| co.is_toplevel())
+            .map(|(key, _)| key.clone())
+            .collect();
         match ss {
+            SortingStrategy::AsIs => {}
             SortingStrategy::Random => {
-                for (key, co) in &self.city_objects {
-                    if co.is_toplevel() {
-                        self.sorted_ids.push(key.clone());
-                    }
-                }
+                use rand::seq::SliceRandom;
+                self.sorted_ids.shuffle(&mut rand::thread_rng());
             }
-            SortingStrategy::Lexicographical => {
-                for (key, co) in &self.city_objects {
-                    if co.is_toplevel() {
-                        self.sorted_ids.push(key.clone());
-                    }
-                }
-                self.sorted_ids.sort();
-            }
-            _ => todo!(),
+            SortingStrategy::Lexicographical => self.sorted_ids.sort(),
         }
     }
     fn add_co(&mut self, id: String, co: CityObject) {
-        self.city_objects.insert(id.clone(), co);
+        self.city_objects.insert(id, co);
     }
-    fn add_vertices(&mut self, vs: &mut Vec<Vec<i64>>) {
+    fn add_vertices(&mut self, vs: &mut Vec<Vertex>) {
         if let Some(c) = &self.transform_correction {
-            //-- the transform correction needs to be applied
-            for v in vs {
-                let cx: i64 = (((v[0] as f64 * c.scale[0]) + c.translate[0]
-                    - self.transform.translate[0])
-                    / self.transform.scale[0])
-                    .round() as i64;
-                let cy: i64 = (((v[1] as f64 * c.scale[1]) + c.translate[1]
-                    - self.transform.translate[1])
-                    / self.transform.scale[1])
-                    .round() as i64;
-                let cz: i64 = (((v[2] as f64 * c.scale[2]) + c.translate[2]
-                    - self.transform.translate[2])
-                    / self.transform.scale[2])
-                    .round() as i64;
-                self.vertices.push(vec![cx, cy, cz]);
+            //-- re-express each vertex in this document's transform
+            let t = &self.transform;
+            for v in vs.iter() {
+                let mut out = [0; 3];
+                for k in 0..3 {
+                    out[k] = (((v[k] as f64 * c.scale[k]) + c.translate[k] - t.translate[k])
+                        / t.scale[k])
+                        .round() as i64;
+                }
+                self.vertices.push(out);
             }
         } else {
             self.vertices.append(vs);
         }
     }
     fn add_vertices_texture(&mut self, vs: Vec<[f64; 2]>) {
-        match &mut self.appearance {
-            Some(x) => x.add_vertices_texture(vs),
-            None => {
-                let mut a: Appearance = Appearance::new();
-                a.add_vertices_texture(vs);
-                self.appearance = Some(a);
-            }
-        };
+        self.appearance
+            .get_or_insert_with(Appearance::new)
+            .add_vertices_texture(vs);
     }
     fn add_material(&mut self, jm: MaterialObject) -> usize {
-        match &mut self.appearance {
-            Some(x) => x.add_material(jm),
-            None => {
-                let mut a: Appearance = Appearance::new();
-                let re = a.add_material(jm);
-                self.appearance = Some(a);
-                re
-            }
-        }
+        self.appearance
+            .get_or_insert_with(Appearance::new)
+            .add_material(jm)
     }
     fn add_texture(&mut self, jm: TextureObject) -> usize {
-        match &mut self.appearance {
-            Some(x) => x.add_texture(jm),
-            None => {
-                let mut a: Appearance = Appearance::new();
-                let re = a.add_texture(jm);
-                self.appearance = Some(a);
-                re
-            }
-        }
+        self.appearance
+            .get_or_insert_with(Appearance::new)
+            .add_texture(jm)
     }
 }
 
@@ -477,8 +425,8 @@ pub struct CityJSONFeature {
     pub thetype: CityJSONFeatureType,
     pub id: String,
     #[serde(rename = "CityObjects")]
-    pub city_objects: HashMap<String, CityObject>,
-    pub vertices: Vec<Vec<i64>>,
+    pub city_objects: IndexMap<String, CityObject>,
+    pub vertices: Vec<Vertex>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
 }
@@ -499,30 +447,30 @@ impl FromStr for CityJSONFeature {
 
 impl CityJSONFeature {
     pub fn new() -> Self {
-        let co: HashMap<String, CityObject> = HashMap::new();
-        let v: Vec<Vec<i64>> = Vec::new();
         CityJSONFeature {
             thetype: CityJSONFeatureType::CityJSONFeature,
             id: "".to_string(),
-            city_objects: co,
-            vertices: v,
+            city_objects: IndexMap::new(),
+            vertices: Vec::new(),
             appearance: None,
         }
     }
     pub fn add_co(&mut self, id: String, co: CityObject) {
         self.city_objects.insert(id, co);
     }
-    pub fn centroid(&self) -> Vec<f64> {
-        let mut totals: Vec<f64> = vec![0., 0., 0.];
+    /// The mean of the feature's vertices, in the integer (untransformed)
+    /// coordinates they are stored in; `None` if it has none.
+    pub fn centroid(&self) -> Option<[f64; 3]> {
+        if self.vertices.is_empty() {
+            return None;
+        }
+        let mut totals = [0.0; 3];
         for v in &self.vertices {
-            for (t, c) in totals.iter_mut().zip(v) {
-                *t += *c as f64;
+            for k in 0..3 {
+                totals[k] += v[k] as f64;
             }
         }
-        for t in &mut totals {
-            *t /= self.vertices.len() as f64;
-        }
-        totals
+        Some(totals.map(|t| t / self.vertices.len() as f64))
     }
 }
 
