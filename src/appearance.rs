@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
+use serde_json::{Map, Value};
 
 /// One shell's worth of material indices, one per surface. `None` — a whole
 /// shell with no material — is `null` in JSON, which
@@ -146,7 +145,7 @@ pub struct MaterialReference {
     /// no `additionalProperties: false`, so anything further is legal
     /// CityJSON and is kept rather than dropped.
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub other: Map<String, Value>,
 }
 
 /// One theme's texture assignment for a geometry.
@@ -162,7 +161,7 @@ pub struct TextureReference {
     /// As with [`MaterialReference`]: the per-theme texture object declares no
     /// `additionalProperties: false`, so extra members are legal and kept.
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub other: Map<String, Value>,
 }
 
 /// A material or border colour: three numbers, per

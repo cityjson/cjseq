@@ -41,17 +41,8 @@ impl GeometryType {
     }
 }
 
-/// The members every geometry may carry that are neither its type, its lod,
-/// nor its boundaries. The appearance values are depth-typed, keyed by theme.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct GeometryCommon {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub semantics: Option<Semantics>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub material: Option<IndexMap<String, MaterialReference>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub texture: Option<IndexMap<String, TextureReference>>,
-}
+/// Per-theme appearance references of a geometry, keyed by theme name.
+pub type Themes<T> = IndexMap<String, T>;
 
 /// The number of array levels between `v` and the deepest non-array value
 /// inside it. A non-array is 0 deep; `[]` is 1 deep.
@@ -68,57 +59,81 @@ fn nesting_depth(v: &Value) -> usize {
 /// whose boundaries are nested one level too deep does not deserialize, where
 /// previously it decoded happily into an untyped `serde_json::Value` and left
 /// every consumer to guess the depth.
+///
+/// Each variant has exactly the members the schema names for it, and the
+/// schema closes every geometry object, so any other member is rejected. A
+/// MultiPoint or MultiLineString carries no material or texture.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum Geometry {
     MultiPoint {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Ring,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
     },
     MultiLineString {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Vec<Ring>,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
     },
     MultiSurface {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Vec<Surface>,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        material: Option<Themes<MaterialReference>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        texture: Option<Themes<TextureReference>>,
     },
     CompositeSurface {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Vec<Surface>,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        material: Option<Themes<MaterialReference>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        texture: Option<Themes<TextureReference>>,
     },
     Solid {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Vec<Shell>,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        material: Option<Themes<MaterialReference>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        texture: Option<Themes<TextureReference>>,
     },
     MultiSolid {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Vec<Vec<Shell>>,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        material: Option<Themes<MaterialReference>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        texture: Option<Themes<TextureReference>>,
     },
     CompositeSolid {
         #[serde(skip_serializing_if = "Option::is_none")]
         lod: Option<String>,
         boundaries: Vec<Vec<Shell>>,
-        #[serde(flatten)]
-        common: GeometryCommon,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        semantics: Option<Semantics>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        material: Option<Themes<MaterialReference>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        texture: Option<Themes<TextureReference>>,
     },
     GeometryInstance {
         /// The one vertex the template is placed at.
@@ -192,32 +207,64 @@ impl Geometry {
         }
     }
 
-    /// The semantics/material/texture members, if this variant has them.
-    /// A [`Geometry::GeometryInstance`] carries none: its appearance lives on
-    /// the template it refers to.
-    pub fn common(&self) -> Option<&GeometryCommon> {
+    pub fn semantics(&self) -> Option<&Semantics> {
         match self {
-            Geometry::MultiPoint { common, .. }
-            | Geometry::MultiLineString { common, .. }
-            | Geometry::MultiSurface { common, .. }
-            | Geometry::CompositeSurface { common, .. }
-            | Geometry::Solid { common, .. }
-            | Geometry::MultiSolid { common, .. }
-            | Geometry::CompositeSolid { common, .. } => Some(common),
+            Geometry::MultiPoint { semantics, .. }
+            | Geometry::MultiLineString { semantics, .. }
+            | Geometry::MultiSurface { semantics, .. }
+            | Geometry::CompositeSurface { semantics, .. }
+            | Geometry::Solid { semantics, .. }
+            | Geometry::MultiSolid { semantics, .. }
+            | Geometry::CompositeSolid { semantics, .. } => semantics.as_ref(),
             Geometry::GeometryInstance { .. } => None,
         }
     }
 
-    pub fn common_mut(&mut self) -> Option<&mut GeometryCommon> {
+    /// The material themes. Only surface and solid geometries can carry
+    /// them; a [`Geometry::GeometryInstance`]'s appearance lives on its
+    /// template.
+    pub fn material(&self) -> Option<&Themes<MaterialReference>> {
         match self {
-            Geometry::MultiPoint { common, .. }
-            | Geometry::MultiLineString { common, .. }
-            | Geometry::MultiSurface { common, .. }
-            | Geometry::CompositeSurface { common, .. }
-            | Geometry::Solid { common, .. }
-            | Geometry::MultiSolid { common, .. }
-            | Geometry::CompositeSolid { common, .. } => Some(common),
-            Geometry::GeometryInstance { .. } => None,
+            Geometry::MultiSurface { material, .. }
+            | Geometry::CompositeSurface { material, .. }
+            | Geometry::Solid { material, .. }
+            | Geometry::MultiSolid { material, .. }
+            | Geometry::CompositeSolid { material, .. } => material.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn material_mut(&mut self) -> Option<&mut Themes<MaterialReference>> {
+        match self {
+            Geometry::MultiSurface { material, .. }
+            | Geometry::CompositeSurface { material, .. }
+            | Geometry::Solid { material, .. }
+            | Geometry::MultiSolid { material, .. }
+            | Geometry::CompositeSolid { material, .. } => material.as_mut(),
+            _ => None,
+        }
+    }
+
+    /// The texture themes; as for [`Geometry::material`].
+    pub fn texture(&self) -> Option<&Themes<TextureReference>> {
+        match self {
+            Geometry::MultiSurface { texture, .. }
+            | Geometry::CompositeSurface { texture, .. }
+            | Geometry::Solid { texture, .. }
+            | Geometry::MultiSolid { texture, .. }
+            | Geometry::CompositeSolid { texture, .. } => texture.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn texture_mut(&mut self) -> Option<&mut Themes<TextureReference>> {
+        match self {
+            Geometry::MultiSurface { texture, .. }
+            | Geometry::CompositeSurface { texture, .. }
+            | Geometry::Solid { texture, .. }
+            | Geometry::MultiSolid { texture, .. }
+            | Geometry::CompositeSolid { texture, .. } => texture.as_mut(),
+            _ => None,
         }
     }
 
@@ -267,10 +314,7 @@ impl Geometry {
     /// order. The depth of `values` comes from its variant, so the geometry
     /// type is never consulted.
     pub(crate) fn update_material(&mut self, m_oldnew: &mut HashMap<usize, usize>) {
-        let Some(common) = self.common_mut() else {
-            return;
-        };
-        let Some(materials) = common.material.as_mut() else {
+        let Some(materials) = self.material_mut() else {
             return;
         };
         for mat in materials.values_mut() {
@@ -303,10 +347,7 @@ impl Geometry {
         t_oldnew: &mut HashMap<usize, usize>,
         t_v_oldnew: &mut HashMap<usize, usize>,
     ) {
-        let Some(common) = self.common_mut() else {
-            return;
-        };
-        let Some(textures) = common.texture.as_mut() else {
+        let Some(textures) = self.texture_mut() else {
             return;
         };
         //-- the first index of the innermost array is a texture, the rest are
@@ -337,6 +378,7 @@ impl Geometry {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GeometryTemplates {
     pub templates: Vec<Geometry>,
     /// Real coordinates, not transformed integers: templates are placed by
@@ -425,7 +467,7 @@ mod tests {
         });
         let g: Geometry = serde_json::from_value(input.clone()).unwrap();
         assert_eq!(g.geometry_type(), GeometryType::GeometryInstance);
-        assert!(g.common().is_none());
+        assert!(g.semantics().is_none() && g.material().is_none());
         assert_eq!(serde_json::to_value(&g).unwrap(), input);
     }
 
@@ -500,9 +542,7 @@ mod tests {
         let mut t_v_oldnew: HashMap<usize, usize> = HashMap::new();
         g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
 
-        let values =
-            serde_json::to_value(&g.common().unwrap().texture.as_ref().unwrap()["winter"].values)
-                .unwrap();
+        let values = serde_json::to_value(&g.texture().unwrap()["winter"].values).unwrap();
         assert_eq!(
             values,
             serde_json::json!([[[0, 0, 1, 2, 0]], [[0, 2, 1, 3, 2]], [[null]]])
@@ -551,7 +591,7 @@ mod tests {
 
         //-- as above: typed `values`, oracle expectations unchanged.
         let values = serde_json::to_value(
-            g.common().unwrap().material.as_ref().unwrap()["irradiation"]
+            g.material().unwrap()["irradiation"]
                 .values
                 .as_ref()
                 .unwrap(),

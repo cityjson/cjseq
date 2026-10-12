@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
+use serde_json::{Map, Value};
 
 /// The known surface types the spec assigns to Building-, WaterBody-, and
 /// Transportation-family City Objects (§ 3.3 Semantics of geometric
@@ -137,7 +136,7 @@ pub struct SemanticsSurface {
     /// (`slope`, `direction`, ...); they are kept verbatim so that a file
     /// round-trips without losing them.
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub other: Map<String, Value>,
 }
 
 /// One shell's worth of semantic-surface indices, one per surface. `None` — a
@@ -189,7 +188,7 @@ pub struct Semantics {
     pub surfaces: Vec<SemanticsSurface>,
     pub values: Option<SemanticsValues>,
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub other: Map<String, Value>,
 }
 
 #[cfg(test)]

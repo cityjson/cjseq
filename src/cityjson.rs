@@ -5,7 +5,7 @@ use crate::geometry::GeometryTemplates;
 use crate::metadata::{Metadata, Transform};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
@@ -87,8 +87,9 @@ pub struct CityJSON {
     pub geometry_templates: Option<GeometryTemplates>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Value>,
+    /// Root members the schema does not name, kept verbatim.
     #[serde(flatten)]
-    pub other: serde_json::Value,
+    pub other: Map<String, Value>,
     #[serde(skip)]
     sorted_ids: Vec<String>,
     #[serde(skip)]
@@ -142,7 +143,7 @@ impl CityJSON {
             appearance: None,
             geometry_templates: None,
             extensions: None,
-            other: json!(null),
+            other: Map::new(),
             sorted_ids: vec![],
             transform_correction: None,
         }
@@ -429,6 +430,9 @@ pub struct CityJSONFeature {
     pub vertices: Vec<Vertex>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
+    /// Root members the schema does not name, kept verbatim.
+    #[serde(flatten)]
+    pub other: Map<String, Value>,
 }
 
 impl Default for CityJSONFeature {
@@ -453,6 +457,7 @@ impl CityJSONFeature {
             city_objects: IndexMap::new(),
             vertices: Vec::new(),
             appearance: None,
+            other: Map::new(),
         }
     }
     pub fn add_co(&mut self, id: String, co: CityObject) {

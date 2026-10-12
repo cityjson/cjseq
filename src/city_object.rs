@@ -1,7 +1,7 @@
 use crate::geometry::Geometry;
 use crate::metadata::GeographicalExtent;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// The known 1st- and 2nd-level City Object types (§ 2 The different City
 /// Objects). Every variant is a unit variant and every identifier is already
@@ -194,7 +194,7 @@ pub struct CityObject {
     /// round trip. `pub`, like every other `#[serde(flatten)]` catch-all in
     /// this crate, so a `CityObject` can be written as a struct literal.
     #[serde(flatten)]
-    pub other: serde_json::Value,
+    pub other: Map<String, Value>,
 }
 
 impl CityObject {
@@ -224,7 +224,7 @@ impl CityObject {
             children: None,
             children_roles: None,
             parents: None,
-            other: Value::Object(serde_json::Map::new()),
+            other: Map::new(),
         }
     }
 

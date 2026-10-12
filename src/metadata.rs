@@ -1,11 +1,11 @@
 use crate::error::CjseqError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
+use serde_json::{Map, Value};
 
 const DEFAULT_CRS_BASE_URL: &str = "https://www.opengis.net/def/crs";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Transform {
     pub scale: [f64; 3],
     pub translate: [f64; 3],
@@ -39,7 +39,7 @@ pub type GeographicalExtent = [f64; 6];
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Address {
     #[serde(flatten)]
-    pub members: HashMap<String, Value>,
+    pub members: Map<String, Value>,
 }
 
 /// The `pointOfContact` member of [`Metadata`] (§ 5.3).
@@ -74,7 +74,7 @@ pub struct PointOfContact {
     pub address: Option<Address>,
     /// Every contact member the schema does not name, kept verbatim.
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub other: Map<String, Value>,
 }
 
 /// A reference system following the OGC Name Type Specification.
@@ -249,7 +249,7 @@ pub struct Metadata {
     pub title: Option<String>,
     /// Every metadata member the core spec does not name, kept verbatim.
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub other: Map<String, Value>,
 }
 
 #[cfg(test)]
@@ -296,7 +296,7 @@ mod tests {
             website: None,
             organization: None,
             address: None,
-            other: HashMap::new(),
+            other: Map::new(),
         };
         let b = a.clone();
         assert_eq!(a, b);
@@ -509,7 +509,7 @@ mod tests {
             reference_date: None,
             reference_system: None,
             title: Some("dataset".to_string()),
-            other: HashMap::new(),
+            other: Map::new(),
         };
         let b = a.clone();
         assert_eq!(a, b);
