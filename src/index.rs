@@ -23,6 +23,12 @@ macro_rules! index_type {
         #[serde(transparent)]
         pub struct $name(pub usize);
 
+        impl Indices<$name> for $name {
+            fn for_each_index(&mut self, f: &mut dyn FnMut(&mut $name)) {
+                f(self)
+            }
+        }
+
         impl Index for $name {
             const KIND: IndexKind = IndexKind::$kind;
             fn new(i: usize) -> Self {
@@ -66,6 +72,56 @@ index_type!(
     TemplateIndex,
     Template
 );
+
+/// Semantics or material values of a MultiPoint, MultiLineString,
+/// MultiSurface or CompositeSurface: one index per point, line or surface.
+/// `None` is `null`: that primitive has none.
+pub type PrimitiveValues<I> = Vec<Option<I>>;
+/// Semantics or material values of a Solid: per shell, per surface. A whole
+/// shell may be `null`.
+pub type SolidValues<I> = Vec<Option<PrimitiveValues<I>>>;
+/// Semantics or material values of a MultiSolid or CompositeSolid: per
+/// solid, per shell, per surface. A whole solid may be `null`.
+pub type MultiSolidValues<I> = Vec<Option<SolidValues<I>>>;
+
+/// Visit every index of kind `I` held somewhere inside a value, in document
+/// order. Implemented for each index type itself and for the containers
+/// that nest them, so a value of any depth is walked the same way.
+pub(crate) trait Indices<I> {
+    fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I));
+}
+
+impl<I, T: Indices<I>> Indices<I> for Vec<T> {
+    fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
+        for t in self {
+            t.for_each_index(f);
+        }
+    }
+}
+
+impl<I, T: Indices<I>, const N: usize> Indices<I> for [T; N] {
+    fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
+        for t in self {
+            t.for_each_index(f);
+        }
+    }
+}
+
+impl<I, T: Indices<I>> Indices<I> for Option<T> {
+    fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
+        if let Some(t) = self {
+            t.for_each_index(f);
+        }
+    }
+}
+
+impl<I, T: Indices<I>> Indices<I> for indexmap::IndexMap<String, T> {
+    fn for_each_index(&mut self, f: &mut dyn FnMut(&mut I)) {
+        for t in self.values_mut() {
+            t.for_each_index(f);
+        }
+    }
+}
 
 /// Renumber `i` in first-encounter order: an index already in `map` keeps
 /// its mapping, a new one gets the next free position.

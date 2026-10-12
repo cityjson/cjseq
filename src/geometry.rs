@@ -1,7 +1,12 @@
-use crate::appearance::{MaterialReference, TextureReference, TexturedRing};
+use crate::appearance::{
+    MaterialReference, TextureReference, TexturedRing, TexturedShell, TexturedSurface,
+};
 use crate::error::{CjseqError, Result};
-use crate::index::{remap, MaterialIndex, TemplateIndex, TextureIndex, UvIndex, VertexIndex};
-use crate::semantics::Semantics;
+use crate::index::{
+    remap, Indices, MaterialIndex, MultiSolidValues, PrimitiveValues, SolidValues, SurfaceIndex,
+    TemplateIndex, TextureIndex, UvIndex, VertexIndex,
+};
+use crate::semantics::{Semantics, SemanticsSurface};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -133,6 +138,10 @@ fn nesting_depth(v: &Value) -> usize {
 /// previously it decoded happily into an untyped `serde_json::Value` and left
 /// every consumer to guess the depth.
 ///
+/// So is the nesting depth of semantics, material and texture `values`: each
+/// variant names its own value types, so values nested to the wrong depth for
+/// their geometry do not deserialize either.
+///
 /// Each variant has exactly the members the schema names for it, and the
 /// schema closes every geometry object, so any other member is rejected. A
 /// MultiPoint or MultiLineString carries no material or texture.
@@ -155,51 +164,51 @@ pub enum Geometry {
         lod: Lod,
         boundaries: Vec<Surface>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        semantics: Option<Semantics>,
+        semantics: Option<Semantics<PrimitiveValues<SurfaceIndex>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        material: Option<Themes<MaterialReference>>,
+        material: Option<Themes<MaterialReference<PrimitiveValues<MaterialIndex>>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        texture: Option<Themes<TextureReference>>,
+        texture: Option<Themes<TextureReference<Vec<TexturedSurface>>>>,
     },
     CompositeSurface {
         lod: Lod,
         boundaries: Vec<Surface>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        semantics: Option<Semantics>,
+        semantics: Option<Semantics<PrimitiveValues<SurfaceIndex>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        material: Option<Themes<MaterialReference>>,
+        material: Option<Themes<MaterialReference<PrimitiveValues<MaterialIndex>>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        texture: Option<Themes<TextureReference>>,
+        texture: Option<Themes<TextureReference<Vec<TexturedSurface>>>>,
     },
     Solid {
         lod: Lod,
         boundaries: Vec<Shell>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        semantics: Option<Semantics>,
+        semantics: Option<Semantics<SolidValues<SurfaceIndex>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        material: Option<Themes<MaterialReference>>,
+        material: Option<Themes<MaterialReference<SolidValues<MaterialIndex>>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        texture: Option<Themes<TextureReference>>,
+        texture: Option<Themes<TextureReference<Vec<TexturedShell>>>>,
     },
     MultiSolid {
         lod: Lod,
         boundaries: Vec<Vec<Shell>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        semantics: Option<Semantics>,
+        semantics: Option<Semantics<MultiSolidValues<SurfaceIndex>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        material: Option<Themes<MaterialReference>>,
+        material: Option<Themes<MaterialReference<MultiSolidValues<MaterialIndex>>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        texture: Option<Themes<TextureReference>>,
+        texture: Option<Themes<TextureReference<Vec<Vec<TexturedShell>>>>>,
     },
     CompositeSolid {
         lod: Lod,
         boundaries: Vec<Vec<Shell>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        semantics: Option<Semantics>,
+        semantics: Option<Semantics<MultiSolidValues<SurfaceIndex>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        material: Option<Themes<MaterialReference>>,
+        material: Option<Themes<MaterialReference<MultiSolidValues<MaterialIndex>>>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        texture: Option<Themes<TextureReference>>,
+        texture: Option<Themes<TextureReference<Vec<Vec<TexturedShell>>>>>,
     },
     GeometryInstance {
         /// The one vertex the template is placed at.
@@ -273,93 +282,66 @@ impl Geometry {
         }
     }
 
-    pub fn semantics(&self) -> Option<&Semantics> {
+    /// The semantic surfaces, whatever the geometry's depth; the `values`
+    /// that refer to them are on each variant.
+    pub fn surfaces(&self) -> Option<&[SemanticsSurface]> {
         match self {
             Geometry::MultiPoint { semantics, .. }
             | Geometry::MultiLineString { semantics, .. }
             | Geometry::MultiSurface { semantics, .. }
-            | Geometry::CompositeSurface { semantics, .. }
-            | Geometry::Solid { semantics, .. }
-            | Geometry::MultiSolid { semantics, .. }
-            | Geometry::CompositeSolid { semantics, .. } => semantics.as_ref(),
+            | Geometry::CompositeSurface { semantics, .. } => {
+                semantics.as_ref().map(|s| &s.surfaces[..])
+            }
+            Geometry::Solid { semantics, .. } => semantics.as_ref().map(|s| &s.surfaces[..]),
+            Geometry::MultiSolid { semantics, .. } | Geometry::CompositeSolid { semantics, .. } => {
+                semantics.as_ref().map(|s| &s.surfaces[..])
+            }
             Geometry::GeometryInstance { .. } => None,
         }
     }
 
-    /// The material themes. Only surface and solid geometries can carry
-    /// them; a [`Geometry::GeometryInstance`]'s appearance lives on its
-    /// template.
-    pub fn material(&self) -> Option<&Themes<MaterialReference>> {
+    /// Visit every vertex index in `boundaries`, in document order.
+    pub(crate) fn for_each_vertex(&mut self, f: &mut dyn FnMut(&mut VertexIndex)) {
         match self {
-            Geometry::MultiSurface { material, .. }
-            | Geometry::CompositeSurface { material, .. }
-            | Geometry::Solid { material, .. }
-            | Geometry::MultiSolid { material, .. }
-            | Geometry::CompositeSolid { material, .. } => material.as_ref(),
-            _ => None,
-        }
-    }
-
-    fn material_mut(&mut self) -> Option<&mut Themes<MaterialReference>> {
-        match self {
-            Geometry::MultiSurface { material, .. }
-            | Geometry::CompositeSurface { material, .. }
-            | Geometry::Solid { material, .. }
-            | Geometry::MultiSolid { material, .. }
-            | Geometry::CompositeSolid { material, .. } => material.as_mut(),
-            _ => None,
-        }
-    }
-
-    /// The texture themes; as for [`Geometry::material`].
-    pub fn texture(&self) -> Option<&Themes<TextureReference>> {
-        match self {
-            Geometry::MultiSurface { texture, .. }
-            | Geometry::CompositeSurface { texture, .. }
-            | Geometry::Solid { texture, .. }
-            | Geometry::MultiSolid { texture, .. }
-            | Geometry::CompositeSolid { texture, .. } => texture.as_ref(),
-            _ => None,
-        }
-    }
-
-    fn texture_mut(&mut self) -> Option<&mut Themes<TextureReference>> {
-        match self {
-            Geometry::MultiSurface { texture, .. }
-            | Geometry::CompositeSurface { texture, .. }
-            | Geometry::Solid { texture, .. }
-            | Geometry::MultiSolid { texture, .. }
-            | Geometry::CompositeSolid { texture, .. } => texture.as_mut(),
-            _ => None,
-        }
-    }
-
-    /// Every vertex index in `boundaries`, in document order, whatever the
-    /// nesting depth of this variant. The depth is known statically per
-    /// variant, so no runtime inspection of the boundaries is needed.
-    fn boundary_indices_mut(&mut self) -> Box<dyn Iterator<Item = &mut VertexIndex> + '_> {
-        match self {
-            Geometry::MultiPoint { boundaries, .. } => Box::new(boundaries.iter_mut()),
-            Geometry::GeometryInstance { boundaries, .. } => Box::new(boundaries.iter_mut()),
-            Geometry::MultiLineString { boundaries, .. } => {
-                Box::new(boundaries.iter_mut().flatten())
-            }
+            Geometry::MultiPoint { boundaries, .. } => boundaries.for_each_index(f),
+            Geometry::MultiLineString { boundaries, .. } => boundaries.for_each_index(f),
             Geometry::MultiSurface { boundaries, .. }
-            | Geometry::CompositeSurface { boundaries, .. } => {
-                Box::new(boundaries.iter_mut().flatten().flatten())
-            }
-            Geometry::Solid { boundaries, .. } => {
-                Box::new(boundaries.iter_mut().flatten().flatten().flatten())
-            }
+            | Geometry::CompositeSurface { boundaries, .. } => boundaries.for_each_index(f),
+            Geometry::Solid { boundaries, .. } => boundaries.for_each_index(f),
             Geometry::MultiSolid { boundaries, .. }
-            | Geometry::CompositeSolid { boundaries, .. } => Box::new(
-                boundaries
-                    .iter_mut()
-                    .flatten()
-                    .flatten()
-                    .flatten()
-                    .flatten(),
-            ),
+            | Geometry::CompositeSolid { boundaries, .. } => boundaries.for_each_index(f),
+            Geometry::GeometryInstance { boundaries, .. } => boundaries.for_each_index(f),
+        }
+    }
+
+    /// Visit every material index (`value` and `values`, every theme).
+    pub(crate) fn for_each_material(&mut self, f: &mut dyn FnMut(&mut MaterialIndex)) {
+        match self {
+            Geometry::MultiSurface { material, .. }
+            | Geometry::CompositeSurface { material, .. } => material.for_each_index(f),
+            Geometry::Solid { material, .. } => material.for_each_index(f),
+            Geometry::MultiSolid { material, .. } | Geometry::CompositeSolid { material, .. } => {
+                material.for_each_index(f)
+            }
+            _ => {}
+        }
+    }
+
+    /// Visit every texture index, or every texture-vertex index, in the
+    /// texture rings of every theme.
+    pub(crate) fn for_each_texture<I>(&mut self, f: &mut dyn FnMut(&mut I))
+    where
+        TexturedRing: Indices<I>,
+    {
+        match self {
+            Geometry::MultiSurface { texture, .. } | Geometry::CompositeSurface { texture, .. } => {
+                texture.for_each_index(f)
+            }
+            Geometry::Solid { texture, .. } => texture.for_each_index(f),
+            Geometry::MultiSolid { texture, .. } | Geometry::CompositeSolid { texture, .. } => {
+                texture.for_each_index(f)
+            }
+            _ => {}
         }
     }
 
@@ -367,40 +349,17 @@ impl Geometry {
         &mut self,
         violdnew: &mut HashMap<VertexIndex, VertexIndex>,
     ) {
-        for vi in self.boundary_indices_mut() {
-            *vi = remap(violdnew, *vi);
-        }
+        self.for_each_vertex(&mut |vi| *vi = remap(violdnew, *vi));
     }
 
     pub(crate) fn offset_geometry_boundaries(&mut self, offset: usize) {
-        for vi in self.boundary_indices_mut() {
-            vi.0 += offset;
-        }
+        self.for_each_vertex(&mut |vi| vi.0 += offset);
     }
 
     /// Renumber every material index against `m_oldnew`, first-encounter
-    /// order. The depth of `values` comes from its variant, so the geometry
-    /// type is never consulted.
+    /// order.
     pub(crate) fn update_material(&mut self, m_oldnew: &mut HashMap<MaterialIndex, MaterialIndex>) {
-        let Some(materials) = self.material_mut() else {
-            return;
-        };
-        for mat in materials.values_mut() {
-            //-- material.value colours the whole object
-            if let Some(thevalue) = mat.value {
-                mat.value = Some(remap(m_oldnew, thevalue));
-                continue;
-            }
-            //-- else it's material.values, one index per surface. The outer
-            //-- Option is present-vs-absent, the inner null-vs-array; there is
-            //-- nothing to renumber unless both are Some.
-            let Some(values) = mat.values.as_mut().and_then(|v| v.as_mut()) else {
-                continue;
-            };
-            for x in values.indices_mut() {
-                *x = remap(m_oldnew, *x);
-            }
-        }
+        self.for_each_material(&mut |m| *m = remap(m_oldnew, *m));
     }
 
     /// Renumber every texture index against `t_oldnew` and every texture
@@ -413,23 +372,8 @@ impl Geometry {
         t_oldnew: &mut HashMap<TextureIndex, TextureIndex>,
         t_v_oldnew: &mut HashMap<UvIndex, UvIndex>,
     ) {
-        let Some(textures) = self.texture_mut() else {
-            return;
-        };
-        for tex in textures.values_mut() {
-            //-- a theme may legally carry no `values` at all
-            let Some(values) = tex.values.as_mut() else {
-                continue;
-            };
-            for ring in values.rings_mut() {
-                if let TexturedRing::Textured { texture, uvs } = ring {
-                    *texture = remap(t_oldnew, *texture);
-                    for uv in uvs {
-                        *uv = remap(t_v_oldnew, *uv);
-                    }
-                }
-            }
-        }
+        self.for_each_texture(&mut |t: &mut TextureIndex| *t = remap(t_oldnew, *t));
+        self.for_each_texture(&mut |uv: &mut UvIndex| *uv = remap(t_v_oldnew, *uv));
     }
 }
 
@@ -523,7 +467,7 @@ mod tests {
         });
         let g: Geometry = serde_json::from_value(input.clone()).unwrap();
         assert_eq!(g.geometry_type(), GeometryType::GeometryInstance);
-        assert!(g.semantics().is_none() && g.material().is_none());
+        assert!(g.surfaces().is_none());
         assert_eq!(serde_json::to_value(&g).unwrap(), input);
     }
 
@@ -598,7 +542,7 @@ mod tests {
         let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
         g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
 
-        let values = serde_json::to_value(&g.texture().unwrap()["winter"].values).unwrap();
+        let values = serde_json::to_value(&g).unwrap()["texture"]["winter"]["values"].clone();
         assert_eq!(
             values,
             serde_json::json!([[[0, 0, 1, 2, 0]], [[0, 2, 1, 3, 2]], [[null]]])
@@ -647,13 +591,7 @@ mod tests {
         g.update_material(&mut m_oldnew);
 
         //-- as above: typed `values`, oracle expectations unchanged.
-        let values = serde_json::to_value(
-            g.material().unwrap()["irradiation"]
-                .values
-                .as_ref()
-                .unwrap(),
-        )
-        .unwrap();
+        let values = serde_json::to_value(&g).unwrap()["material"]["irradiation"]["values"].clone();
         assert_eq!(
             values,
             serde_json::json!([[0, null, 1], [1, null, 0]]),

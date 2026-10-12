@@ -3,8 +3,9 @@
 //!
 //! Internally the crate is organised into one module per concern:
 //! - `geometry` — `Geometry`, `GeometryType`, `GeometryTemplates`
-//! - `semantics` — `Semantics`, `SemanticsSurface`, `SemanticsValues`
-//! - `appearance` — `Appearance`, `MaterialReference`, `MaterialValues`, `TextureReference`, `TextureValues`
+//! - `semantics` — `Semantics`, `SemanticsSurface`, `SemanticSurfaceType`
+//! - `appearance` — `Appearance`, `MaterialReference`, `TextureReference`, `TexturedRing`
+//! - `index` — one newtype per kind of index (`VertexIndex`, `UvIndex`, ...) and the value shapes `PrimitiveValues`, `SolidValues`, `MultiSolidValues`
 //! - `city_object` — `CityObject`
 //! - `metadata` — `Metadata`, `PointOfContact`, `Address`, `ReferenceSystem`, `Transform`, `GeographicalExtent`
 //! - `error` — `CjseqError`, `Result`
@@ -36,7 +37,8 @@ pub use cityjson::*;
 pub use error::{CjseqError, IndexKind};
 pub use geometry::*;
 pub use index::{
-    Index, MaterialIndex, SurfaceIndex, TemplateIndex, TextureIndex, UvIndex, VertexIndex,
+    Index, MaterialIndex, MultiSolidValues, PrimitiveValues, SolidValues, SurfaceIndex,
+    TemplateIndex, TextureIndex, UvIndex, VertexIndex,
 };
 pub use metadata::*;
 pub use semantics::*;
