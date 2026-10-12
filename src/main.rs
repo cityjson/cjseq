@@ -32,6 +32,9 @@ enum Commands {
         /// Sorting for the cat output
         #[arg(short, long, value_enum)]
         order: Option<SortingStrategy>,
+        /// Seed for `--order random`, to reproduce an order; random if absent
+        #[arg(long)]
+        seed: Option<u64>,
     },
     /// CityJSONSeq ==> CityJSON
     Collect {
@@ -73,10 +76,12 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let result = match &cli.command {
-        Commands::Cat { file, order } => {
+        Commands::Cat { file, order, seed } => {
             let order = match order.clone().unwrap_or(SortingStrategy::AsIs) {
                 SortingStrategy::AsIs => cjseq::SortingStrategy::AsIs,
-                SortingStrategy::Random => cjseq::SortingStrategy::Random,
+                SortingStrategy::Random => cjseq::SortingStrategy::Random {
+                    seed: seed.unwrap_or_else(rand::random),
+                },
                 SortingStrategy::Lexicographical => cjseq::SortingStrategy::Lexicographical,
             };
             read_all(file.as_deref()).and_then(|s| cat(&s, order))

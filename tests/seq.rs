@@ -64,7 +64,7 @@ fn features_come_out_in_the_order_asked_for() {
     let ids = |o| -> Vec<String> { cj.features(o).map(|f| f.unwrap().id).collect() };
     assert_eq!(ids(SortingStrategy::AsIs), ["c", "a", "b"]);
     assert_eq!(ids(SortingStrategy::Lexicographical), ["a", "b", "c"]);
-    let mut r = ids(SortingStrategy::Random);
+    let mut r = ids(SortingStrategy::Random { seed: 7 });
     r.sort();
     assert_eq!(r, ["a", "b", "c"]);
 }
@@ -523,4 +523,35 @@ fn collecting_rejects_a_city_object_id_seen_in_an_earlier_feature() {
     let doc = c.finish();
     assert!(!doc.city_objects.contains_key("b"));
     assert_eq!(doc.city_objects["p"].parents, Some(vec!["a".to_string()]));
+}
+
+/// A random order is reproducible: the same seed gives the same order, and
+/// different seeds give different ones.
+#[test]
+fn a_random_order_is_reproducible_from_its_seed() {
+    let objects: String = (0..50)
+        .map(|i| format!(r#""o{i}":{{"type":"Building"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let cj = CityJSON::from_str(&format!(
+        r#"{{"type":"CityJSON","version":"2.0","transform":{{"scale":[1.0,1.0,1.0],"translate":[0.0,0.0,0.0]}},"CityObjects":{{{objects}}},"vertices":[]}}"#
+    ))
+    .unwrap();
+    let order = |seed| -> Vec<String> {
+        cj.features(SortingStrategy::Random { seed })
+            .map(|f| f.unwrap().id)
+            .collect()
+    };
+    assert_eq!(order(1), order(1));
+    assert_ne!(order(1), order(2));
+    let as_is: Vec<String> = cj
+        .features(SortingStrategy::AsIs)
+        .map(|f| f.unwrap().id)
+        .collect();
+    assert_ne!(order(1), as_is);
+    let mut sorted = order(1);
+    sorted.sort();
+    let mut expected = as_is;
+    expected.sort();
+    assert_eq!(sorted, expected);
 }

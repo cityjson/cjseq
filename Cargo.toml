@@ -12,15 +12,19 @@ repository = "https://github.com/cityjson/cjseq"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "cjseq"
+path = "src/main.rs"
+required-features = ["cli"]
 
 [dependencies]
-clap = { version = "4.5.4", features = ["derive"] }
 indexmap = { version = "2", features = ["serde"] }
-rand = "0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip", "preserve_order"] }
-# serde_derive = "1.0"
+
+# CLI dependencies
+clap = { version = "4.5.4", features = ["derive"], optional = true }
+rand = { version = "0.8.5", optional = true }
 
 # WASM dependencies
 wasm-bindgen = { version = "0.2", features = ["serde-serialize"], optional = true }
@@ -34,7 +38,14 @@ optional = true
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = { version = "0.1", optional = true }
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.2", features = ["js"], optional = true }
 
 [features]
+default = ["cli"]
+#-- the `cjseq` binary; the library itself needs none of these
+cli = ["dep:clap", "dep:rand", "dep:getrandom"]
 wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:web-sys", "dep:console_error_panic_hook"]
+
+[[test]]
+name = "cli"
+required-features = ["cli"]

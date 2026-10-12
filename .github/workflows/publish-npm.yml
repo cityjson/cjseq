@@ -27,7 +27,7 @@ jobs:
 
       - name: Build WASM
         run: |
-          wasm-pack build --target web --scope cityjson -- --features wasm
+          wasm-pack build --target web --scope cityjson -- --no-default-features --features wasm
 
       - name: Publish to NPM
         env:

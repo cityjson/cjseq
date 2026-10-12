@@ -59,14 +59,31 @@ fn slice_appearance(
     Ok(a)
 }
 
+/// Fisher-Yates over a SplitMix64 stream: a reproducible shuffle without a
+/// random-number dependency.
+fn shuffle<T>(v: &mut [T], seed: u64) {
+    let mut state = seed;
+    let mut next = || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    };
+    for i in (1..v.len()).rev() {
+        let j = (next() % (i as u64 + 1)) as usize;
+        v.swap(i, j);
+    }
+}
+
 /// The order in which [`CityJSON::features`] hands out features.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SortingStrategy {
     /// The order the top-level City Objects appear in the document.
     AsIs,
-    /// A random permutation, different on every call.
-    Random,
+    /// A random permutation, the same for the same seed.
+    Random { seed: u64 },
     /// Sorted by City Object id.
     Lexicographical,
 }
@@ -203,10 +220,7 @@ impl CityJSON {
             .collect();
         match order {
             SortingStrategy::AsIs => {}
-            SortingStrategy::Random => {
-                use rand::seq::SliceRandom;
-                ids.shuffle(&mut rand::thread_rng());
-            }
+            SortingStrategy::Random { seed } => shuffle(&mut ids, seed),
             SortingStrategy::Lexicographical => ids.sort(),
         }
         ids

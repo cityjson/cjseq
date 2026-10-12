@@ -21,5 +21,9 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Run tests
         run: cargo test
+      - name: Library alone (no CLI dependencies)
+        run: |
+          cargo clippy --no-default-features --all-targets -- -D warnings
+          cargo test --no-default-features
       - name: Build wasm
-        run: cargo build --target wasm32-unknown-unknown --features wasm
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features wasm

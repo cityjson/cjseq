@@ -18,8 +18,10 @@ Its types follow the CityJSON 2.0 schema: a geometry's boundaries and its semant
 ### Using the library
 
 ```sh
-cargo add cjseq
+cargo add cjseq --no-default-features
 ```
+
+The default `cli` feature builds the `cjseq` binary and pulls in `clap` and `rand`; the library itself depends only on `serde`, `serde_json` and `indexmap`.
 
 ### Compiling the project
 
@@ -47,7 +49,7 @@ Alternatively, to use stdin as input:
 cat myfile.city.json | cjseq cat
 ```
 
-By default the features are written in the order of the input; `--order lexicographical` sorts them by id, `--order random` shuffles them.
+By default the features are written in the order of the input; `--order lexicographical` sorts them by id, `--order random` shuffles them (`--seed <n>` reproduces a shuffle).
 
 ### Convert CityJSONSeq to CityJSON
 
@@ -151,5 +153,5 @@ cargo install wasm-pack
 Build the WASM bindings, which are behind the `wasm` cargo feature:
 
 ```sh
-wasm-pack build --release --target web --out-dir js -- --features wasm
+wasm-pack build --release --target web --out-dir js -- --no-default-features --features wasm
 ```
