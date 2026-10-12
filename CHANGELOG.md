@@ -11,7 +11,11 @@
 - Objects the schema closes (geometries, `transform`, `appearance`, `geometry-templates`, materials, textures) reject members it does not name; every other object keeps them in an `other: serde_json::Map`.
 - `CityObjects` and the material/texture theme maps are `IndexMap`s, and object member order is preserved, so output follows input order and is deterministic.
 - The document model and CityJSONSeq sequencing are split. `CityJSON` holds only the document; `header()` (was `get_metadata`) and `features(order)` slice it into a sequence, `feature(id)` slices one feature, and `Collector` (`new`, `add`, `add_header`, `finish`) replaces `add_cjfeature`/`add_transform_correction`. `SeqReader`/`SeqWriter` read and write a sequence line by line, as `Line::Header`/`Line::Feature`. `get_cjfeature`, `sort_cjfeatures` and the hidden sorting state are gone; `cjseq_to_cj` returns a `Result`.
-- `SortingStrategy` is `AsIs` (input order, now the CLI default), `Random` (a real shuffle) or `Lexicographical`; the unimplemented `Morton`/`Hilbert` are gone.
+- `SortingStrategy` is `AsIs` (input order, now the CLI default), `Random { seed }` (a shuffle reproducible from its seed; `cjseq cat --seed`) or `Lexicographical`; the unimplemented `Morton`/`Hilbert` are gone.
+- A feature is rooted at every City Object whose parents are only CityObjectGroups; a group's feature holds just the group, so a member of two groups is written once. A City Object no feature reaches is a `NotInAnyFeature` error instead of being left out.
+- Warnings are a `Warning` type of their own, not `CjseqError` variants.
+- The public enums are `#[non_exhaustive]` (except `Line`).
+- `clap`, `rand` and `getrandom` are optional, behind a default `cli` feature that the binary needs; the library depends only on `serde`, `serde_json` and `indexmap`. `rust-version` is 1.85.
 - Errors are a `CjseqError` with structured variants (`IndexOutOfRange`, `DanglingReference`, `HierarchyMismatch`, `ValueCount`, `MisplacedMember`, located by `InCityObject`, `InTemplate`, `AtLine`); `Result<T>` lives at `cjseq::error::Result`. Malformed input is an error, never a panic.
 - The library is split into per-concern modules; every type is re-exported at the crate root. `CityJSON` and `CityJSONFeature` implement `FromStr` and `Default`.
 - wasm-bindgen bindings are behind an off-by-default `wasm` cargo feature, so library consumers building for wasm32 no longer inherit them.
@@ -26,6 +30,10 @@
 - Round-trip, validation and sequencing tests over real CityJSONSeq fixtures; CI runs fmt, clippy with warnings denied, the tests and the wasm build.
 ### Fixed
 - `collect` corrupted the texture coordinates of every textured feature after the first.
+- Address `location`s (Building, BuildingPart, BuildingUnit, Bridge, BridgePart) were never renumbered: `cat` and `collect` left them pointing at the wrong vertices. They are now a typed `CityObjectAddress`, renumbered and validated like any geometry.
+- `cat | collect` lost `default-theme-material`/`-texture` when the document had no geometry templates.
+- Collecting several sequences kept only a later header's transform; its geometry templates (and their appearance), extensions and root members are now merged, with GeometryInstances shifted to match, and conflicts reported.
+- `collect` turned an index past the end of a feature's own vertices or palettes into a valid-looking index into another feature's data; it is now an error. A City Object id seen in an earlier feature is a `DuplicateId` error instead of a silent overwrite.
 - The header written by `cat` cut the appearance down to what the geometry templates use but left the templates' indices unrenumbered, so they pointed at the wrong materials and textures.
 - Metadata, address, `pointOfContact`, semantics, appearance and feature members the schema permits are kept instead of dropped or rejected; every `referenceSystem` the schema's URL pattern permits is accepted.
 - Coordinates round-trip exactly (`serde_json`'s `float_roundtrip`).

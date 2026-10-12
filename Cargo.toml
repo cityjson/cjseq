@@ -4,6 +4,8 @@ version = "0.5.0"
 description = "Create+process+modify+convert CityJSONSeq"
 authors = ["Hugo Ledoux <h.ledoux@tudelft.nl>"]
 edition = "2021"
+#-- the oldest Rust the locked dependencies build on (indexmap 2.14, clap 4.6)
+rust-version = "1.85"
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/cityjson/cjseq"

@@ -27,3 +27,11 @@ jobs:
           cargo test --no-default-features
       - name: Build wasm
         run: cargo build --target wasm32-unknown-unknown --no-default-features --features wasm
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust (the rust-version in Cargo.toml)
+        uses: dtolnay/rust-toolchain@1.85
+      - name: Build and test on the minimum supported Rust
+        run: cargo test --locked
