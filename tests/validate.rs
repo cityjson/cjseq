@@ -380,25 +380,6 @@ fn every_fixture_and_everything_made_from_it_validates() {
         let docs: Vec<CityJSON> = if name.ends_with(".jsonl") {
             let mut lines = text.lines();
             let header = CityJSON::from_str(lines.next().unwrap()).unwrap();
-            if name.ends_with("geom_temp.city.jsonl") {
-                //-- this header was written by a `cat` that sliced the
-                //-- appearance to the templates' materials but left the
-                //-- templates' indices unrenumbered (fixed since): template
-                //-- 1 points past the two materials left. It is reported,
-                //-- and nothing built on it can validate.
-                let e = header.validate().unwrap_err();
-                assert!(
-                    e.to_string()
-                        .contains("Material index 2 is out of range (there are 2)"),
-                    "{e}"
-                );
-                for l in lines {
-                    let f = CityJSONFeature::from_str(l).unwrap();
-                    f.validate()
-                        .unwrap_or_else(|e| panic!("{name} feature {}: {e}", f.id));
-                }
-                continue;
-            }
             header
                 .validate()
                 .unwrap_or_else(|e| panic!("{name} header: {e}"));
