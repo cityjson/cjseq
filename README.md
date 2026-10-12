@@ -100,6 +100,8 @@ cat myfile.city.jsonl | cjseq filter --bbox 85007 446179 85168 446290 > mysubset
 cjseq validate myfile.city.jsonl
 ```
 
+It also prints warnings, without failing, for what the spec advises against but a valid file may still do: a core City Object with an Extension City Object as a child (§ 8.7 rule 3).
+
 It complements, and does not replace, schema validation with [cjval](https://github.com/cityjson/cjval).
 
 ## Input constraints

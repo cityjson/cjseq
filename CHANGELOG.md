@@ -17,6 +17,10 @@
 - wasm-bindgen bindings are behind an off-by-default `wasm` cargo feature, so library consumers building for wasm32 no longer inherit them.
 ### Added
 - `validate()`/`errors()` on `CityJSON` and `CityJSONFeature`: every vertex, template, semantic surface, material, texture and texture-vertex index is in range, value arrays match the boundaries they describe, the parent/child hierarchy agrees with itself, and a feature carries no document-only members. The CLI has a `validate` subcommand.
+- `validate()` also checks the schemas' Extension name patterns: `+` then a capital letter for a City Object type, `+` then word characters for a semantic surface type, and `X.Y` or `X.Y.Z` for an Extension's version (`CjseqError::Pattern`).
+- `warnings()` on `CityJSON` and `CityJSONFeature` reports what the spec advises against but a valid file may still do: a core City Object with an Extension child (§ 8.7 rule 3), which the Noise Extension example published with the spec does. `cjseq validate` prints warnings without failing.
+- `Collector::warnings()`: CityJSONFeature lines may carry root members the schema does not name, and collecting drops them, one `DroppedMember` warning each; `cjseq collect` prints them to stderr.
+- `Display` for `CityJSONVersion` (`1.1`, `2.0`).
 - Features keep every descendant of their top-level City Object, not only its children.
 - `CityObject::new`, `children_roles`, `Geometry::surfaces`, `PartialEq` on the public types.
 - Round-trip, validation and sequencing tests over real CityJSONSeq fixtures; CI runs fmt, clippy with warnings denied, the tests and the wasm build.

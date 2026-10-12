@@ -348,6 +348,42 @@ fn hierarchy(cos: &IndexMap<String, CityObject>, errs: &mut Vec<CjseqError>) {
     }
 }
 
+/// § 8.7 rule 3: a core City Object should not have an Extension child.
+/// A CityObjectGroup's `children` are its members, not a hierarchy, so the
+/// rule does not apply to it. Each pair is reported once, whichever side
+/// names the other.
+fn extension_children(cos: &IndexMap<String, CityObject>) -> Vec<CjseqError> {
+    let core = |co: &CityObject| {
+        matches!(co.thetype, CityObjectType::Known(_))
+            && co.thetype != CityObjectType::CityObjectGroup
+    };
+    let ext = |co: &CityObject| matches!(co.thetype, CityObjectType::Extension(_));
+    let mut pairs: indexmap::IndexSet<(&str, &str)> = indexmap::IndexSet::new();
+    for (id, co) in cos {
+        if core(co) {
+            for child in co.children.iter().flatten() {
+                if cos.get(child).is_some_and(ext) {
+                    pairs.insert((id, child));
+                }
+            }
+        }
+        if ext(co) {
+            for parent in co.parents.iter().flatten() {
+                if cos.get(parent).is_some_and(core) {
+                    pairs.insert((parent, id));
+                }
+            }
+        }
+    }
+    pairs
+        .into_iter()
+        .map(|(parent, child)| CjseqError::ExtensionChildOfCoreObject {
+            parent: parent.to_string(),
+            child: child.to_string(),
+        })
+        .collect()
+}
+
 fn city_objects(cos: &IndexMap<String, CityObject>, l: &Lengths, errs: &mut Vec<CjseqError>) {
     hierarchy(cos, errs);
     for (id, co) in cos {
@@ -414,6 +450,12 @@ impl CityJSON {
     pub fn validate(&self) -> Result<()> {
         first(self.errors())
     }
+
+    /// What the spec advises against but a valid document may still do:
+    /// a core City Object with an Extension child (§ 8.7 rule 3).
+    pub fn warnings(&self) -> Vec<CjseqError> {
+        extension_children(&self.city_objects)
+    }
 }
 
 impl CityJSONFeature {
@@ -442,5 +484,10 @@ impl CityJSONFeature {
     /// The first of [`CityJSONFeature::errors`], if any.
     pub fn validate(&self) -> Result<()> {
         first(self.errors())
+    }
+
+    /// As [`CityJSON::warnings`].
+    pub fn warnings(&self) -> Vec<CjseqError> {
+        extension_children(&self.city_objects)
     }
 }

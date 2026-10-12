@@ -40,6 +40,14 @@ pub enum CjseqError {
         expected: usize,
         found: usize,
     },
+    /// A core City Object has an Extension City Object as a child, which
+    /// § 8.7 rule 3 says it should not. Reported by `warnings()`, not
+    /// `errors()`: the Noise Extension published with the spec does it.
+    ExtensionChildOfCoreObject { parent: String, child: String },
+    /// Collecting dropped a root member of a CityJSONFeature: the feature
+    /// schema allows any, but a CityJSON document has nowhere to keep them
+    /// per feature. Reported by [`crate::Collector::warnings`].
+    DroppedMember { feature: String, member: String },
     /// A name or version does not match the pattern the schema gives it.
     Pattern {
         /// What the value is, eg `"Extension City Object type"`.
@@ -110,6 +118,14 @@ impl fmt::Display for CjseqError {
                 expected,
                 found,
             } => write!(f, "{found} {what} where the boundaries call for {expected}"),
+            CjseqError::ExtensionChildOfCoreObject { parent, child } => write!(
+                f,
+                "core City Object {parent:?} has the Extension City Object {child:?} as a child (§ 8.7 rule 3)"
+            ),
+            CjseqError::DroppedMember { feature, member } => write!(
+                f,
+                "dropped the root member {member:?} of CityJSONFeature {feature:?}"
+            ),
             CjseqError::Pattern {
                 what,
                 value,
@@ -146,6 +162,8 @@ impl std::error::Error for CjseqError {
             | CjseqError::ValueCount { .. }
             | CjseqError::MisplacedMember { .. }
             | CjseqError::Pattern { .. }
+            | CjseqError::ExtensionChildOfCoreObject { .. }
+            | CjseqError::DroppedMember { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
     }

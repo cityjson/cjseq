@@ -167,6 +167,9 @@ fn collect(files: &[String]) -> Result<()> {
             read(&mut BufReader::new(File::open(file)?))?;
         }
     }
+    for w in collector.iter().flat_map(Collector::warnings) {
+        eprintln!("warning: {w}");
+    }
     let cj = collector.map(Collector::finish).unwrap_or_default();
     let mut out = BufWriter::new(io::stdout().lock());
     serde_json::to_writer(&mut out, &cj)?;
@@ -238,29 +241,35 @@ fn filter(keep: &Filter, exclude: bool) -> Result<()> {
     Ok(())
 }
 
-/// Print every problem in a CityJSON document or a CityJSONSeq; fail if
-/// there is one.
+/// Print every problem in a CityJSON document or a CityJSONSeq, and every
+/// warning; fail if there is a problem.
 fn validate(input: &str) -> Result<()> {
     let mut problems: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
     match input.parse::<CityJSON>() {
         Ok(cj) => {
             problems.extend(cj.errors().iter().map(ToString::to_string));
+            warnings.extend(cj.warnings().iter().map(ToString::to_string));
         }
         _ => {
             for line in SeqReader::new(input.as_bytes()) {
                 match line {
                     Err(e) => problems.push(e.to_string()),
                     Ok(Line::Header(h)) => {
-                        problems.extend(h.errors().iter().map(|e| format!("header: {e}")))
+                        problems.extend(h.errors().iter().map(|e| format!("header: {e}")));
+                        warnings.extend(h.warnings().iter().map(|e| format!("header: {e}")));
                     }
-                    Ok(Line::Feature(f)) => problems.extend(
-                        f.errors()
-                            .iter()
-                            .map(|e| format!("feature {:?}: {e}", f.id)),
-                    ),
+                    Ok(Line::Feature(f)) => {
+                        let at = |e: &CjseqError| format!("feature {:?}: {e}", f.id);
+                        problems.extend(f.errors().iter().map(at));
+                        warnings.extend(f.warnings().iter().map(at));
+                    }
                 }
             }
         }
+    }
+    for w in &warnings {
+        println!("warning: {w}");
     }
     for p in &problems {
         println!("{p}");

@@ -368,6 +368,7 @@ pub struct Collector {
     /// document's palettes.
     materials: HashMap<MaterialKey, usize>,
     textures: HashMap<TextureKey, usize>,
+    warnings: Vec<CjseqError>,
 }
 
 impl Collector {
@@ -390,6 +391,7 @@ impl Collector {
             correction: None,
             materials,
             textures,
+            warnings: Vec::new(),
         }
     }
 
@@ -402,12 +404,19 @@ impl Collector {
 
     /// Add one feature: its City Objects, its vertices (re-expressed if a
     /// later header changed the transform) and its appearance, merged into
-    /// the document's palettes.
+    /// the document's palettes. Root members the feature schema allows but
+    /// does not name are dropped, each with a [`Collector::warnings`] entry.
     pub fn add(&mut self, mut cjf: CityJSONFeature) -> Result<()> {
         if !cjf.city_objects.contains_key(&cjf.id) {
             return Err(CjseqError::DanglingReference {
                 from: "CityJSONFeature.id".to_string(),
                 to: cjf.id,
+            });
+        }
+        for member in cjf.other.keys() {
+            self.warnings.push(CjseqError::DroppedMember {
+                feature: cjf.id.clone(),
+                member: member.clone(),
             });
         }
         let doc = &mut self.doc;
@@ -467,6 +476,11 @@ impl Collector {
             }
         }
         Ok(())
+    }
+
+    /// What collecting has had to drop so far.
+    pub fn warnings(&self) -> &[CjseqError] {
+        &self.warnings
     }
 
     /// The collected document, with duplicate vertices merged, the transform

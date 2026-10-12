@@ -228,3 +228,26 @@ fn collecting_merges_identical_palette_entries() {
     let m = |id: &str| v["CityObjects"][id]["geometry"][0]["material"]["m"]["value"].clone();
     assert_eq!((m("a"), m("b"), m("c")), (json!(0), json!(1), json!(1)));
 }
+
+/// A CityJSONFeature may carry root members the schema does not name
+/// (`additionalProperties: true`), but a CityJSON document has nowhere to
+/// put them per feature: collecting drops each and says so.
+#[test]
+fn collecting_reports_each_feature_root_member_it_drops() {
+    let (header, _) = read("tests/data/small.city.jsonl");
+    let mut c = Collector::new(header);
+    let f = CityJSONFeature::from_str(
+        r#"{"type":"CityJSONFeature","id":"a","CityObjects":{"a":{"type":"Building"}},"vertices":[],"+provenance":{"run":7},"+note":"x"}"#,
+    )
+    .unwrap();
+    assert_eq!(f.other.len(), 2, "the feature itself keeps them");
+    c.add(f).unwrap();
+    let w = c.warnings();
+    assert_eq!(w.len(), 2, "{w:?}");
+    assert!(
+        matches!(&w[0], CjseqError::DroppedMember { feature, member } if feature == "a" && member == "+provenance")
+    );
+    assert!(matches!(&w[1], CjseqError::DroppedMember { member, .. } if member == "+note"));
+    let doc = c.finish();
+    assert!(!doc.other.contains_key("+provenance"));
+}

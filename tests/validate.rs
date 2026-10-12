@@ -496,3 +496,59 @@ fn extension_names_and_versions_follow_the_schema_patterns() {
         );
     }
 }
+
+/// § 8.7 rule 3: a core City Object should not have an Extension City
+/// Object as a child. The Noise Extension published with the spec does
+/// exactly that, so it is a warning, not an error: `validate()` passes and
+/// `warnings()` reports it.
+#[test]
+fn an_extension_child_under_a_core_city_object_is_a_warning() {
+    let cj = doc(
+        json!({"b": {"type": "Building", "children": ["x"]},
+               "x": {"type": "+Balcony", "parents": ["b"]}}),
+        json!([]),
+        json!({}),
+    );
+    cj.validate().unwrap();
+    let w = cj.warnings();
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(
+        matches!(&w[0], CjseqError::ExtensionChildOfCoreObject { parent, child } if parent == "b" && child == "x"),
+        "{w:?}"
+    );
+    //-- an Extension parent may have either kind of child
+    let ok = doc(
+        json!({"f": {"type": "+FancyBuilding", "children": ["x", "p"]},
+               "x": {"type": "+Balcony", "parents": ["f"]},
+               "p": {"type": "BuildingPart", "parents": ["f"]}}),
+        json!([]),
+        json!({}),
+    );
+    assert!(ok.warnings().is_empty());
+    //-- a CityObjectGroup's children are its members, not a hierarchy
+    let group = doc(
+        json!({"g": {"type": "CityObjectGroup", "children": ["x"]},
+               "x": {"type": "+Balcony", "parents": ["g"]}}),
+        json!([]),
+        json!({}),
+    );
+    assert!(group.warnings().is_empty());
+}
+
+#[test]
+fn the_noise_extension_example_is_valid_with_a_warning_per_segment() {
+    let text = std::fs::read_to_string("tests/data/noise_extension.city.jsonl").unwrap();
+    let mut lines = text.lines();
+    let header = CityJSON::from_str(lines.next().unwrap()).unwrap();
+    let mut c = cjseq::Collector::new(header);
+    for l in lines {
+        let f = CityJSONFeature::from_str(l).unwrap();
+        f.validate().unwrap();
+        c.add(f).unwrap();
+    }
+    let cj = c.finish();
+    cj.validate().unwrap();
+    let w = cj.warnings();
+    assert_eq!(w.len(), 2, "{w:?}");
+    assert!(w.iter().all(|e| matches!(e, CjseqError::ExtensionChildOfCoreObject { parent, .. } if parent == "a_noisy_bench")));
+}
