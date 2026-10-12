@@ -132,9 +132,15 @@ fn read_all(file: Option<&Path>) -> Result<String> {
 
 fn cat(input: &str, order: cjseq::SortingStrategy) -> Result<()> {
     let cj: CityJSON = input.parse()?;
+    let header = cj.header()?;
+    let mut features = cj.features(order).peekable();
+    //-- a document that cannot be sliced fails before anything is written
+    if let Some(Err(_)) = features.peek() {
+        return Err(features.next().unwrap().unwrap_err());
+    }
     let mut w = SeqWriter::new(BufWriter::new(io::stdout().lock()));
-    w.write_header(&cj.header()?)?;
-    for f in cj.features(order) {
+    w.write_header(&header)?;
+    for f in features {
         w.write_feature(&f?)?;
     }
     w.into_inner().flush()?;

@@ -203,3 +203,45 @@ fn the_centroid_of_no_vertices_is_none() {
     .unwrap();
     assert_eq!(f.centroid(), Some([1.0, 2.0, 3.0]));
 }
+
+/// Every City Object lands in exactly one feature: one that no feature can
+/// reach (its parent is missing, or does not list it as a child) is an
+/// error, not silently left out.
+#[test]
+fn a_city_object_in_no_feature_is_an_error_not_dropped() {
+    let cj = doc(
+        json!({
+            "a": {"type": "Building"},
+            "orphan": {"type": "BuildingPart", "parents": ["nope"]},
+            "c": {"type": "BuildingPart", "parents": ["a"]}
+        }),
+        json!([]),
+    );
+    let results: Vec<_> = cj.features(SortingStrategy::AsIs).collect();
+    assert_eq!(results.len(), 1, "one error, and nothing partial");
+    match &results[0] {
+        Err(CjseqError::NotInAnyFeature { ids }) => assert_eq!(ids, &["orphan", "c"]),
+        other => panic!("expected NotInAnyFeature, got {other:?}"),
+    }
+}
+
+/// A CityObjectGroup's members are not its parts (§ 2.5): each member is a
+/// feature of its own, and the group's feature holds just the group, so a
+/// member of two groups is written once.
+#[test]
+fn group_members_are_features_of_their_own() {
+    let cj = doc(
+        json!({
+            "g1": {"type": "CityObjectGroup", "children": ["b"]},
+            "g2": {"type": "CityObjectGroup", "children": ["b", "c"]},
+            "b": {"type": "Building", "parents": ["g1", "g2"], "children": ["bp"]},
+            "bp": {"type": "BuildingPart", "parents": ["b"]},
+            "c": {"type": "Building", "parents": ["g2"]}
+        }),
+        json!([]),
+    );
+    cj.validate().unwrap();
+    let fs = features(&mut cj.clone(), SortingStrategy::AsIs);
+    let ids: Vec<Vec<&String>> = fs.iter().map(|f| f.city_objects.keys().collect()).collect();
+    assert_eq!(ids, [vec!["g1"], vec!["g2"], vec!["b", "bp"], vec!["c"]]);
+}

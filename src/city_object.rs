@@ -241,13 +241,6 @@ impl CityObject {
             .filter_map(|a| a.location.as_mut());
         self.geometry.iter_mut().flatten().chain(locations)
     }
-
-    pub(crate) fn is_toplevel(&self) -> bool {
-        match &self.parents {
-            Some(x) => x.is_empty(),
-            None => true,
-        }
-    }
 }
 
 #[cfg(test)]

@@ -48,6 +48,9 @@ pub enum CjseqError {
     /// schema allows any, but a CityJSON document has nowhere to keep them
     /// per feature. Reported by [`crate::Collector::warnings`].
     DroppedMember { feature: String, member: String },
+    /// City Objects that no feature reaches: their parent is missing, or
+    /// does not list them as children.
+    NotInAnyFeature { ids: Vec<String> },
     /// A name or version does not match the pattern the schema gives it.
     Pattern {
         /// What the value is, eg `"Extension City Object type"`.
@@ -126,6 +129,11 @@ impl fmt::Display for CjseqError {
                 f,
                 "dropped the root member {member:?} of CityJSONFeature {feature:?}"
             ),
+            CjseqError::NotInAnyFeature { ids } => write!(
+                f,
+                "City Objects in no feature (a parent is missing or does not list them as children): {}",
+                ids.join(", ")
+            ),
             CjseqError::Pattern {
                 what,
                 value,
@@ -164,6 +172,7 @@ impl std::error::Error for CjseqError {
             | CjseqError::Pattern { .. }
             | CjseqError::ExtensionChildOfCoreObject { .. }
             | CjseqError::DroppedMember { .. }
+            | CjseqError::NotInAnyFeature { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
     }

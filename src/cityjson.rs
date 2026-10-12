@@ -1,5 +1,5 @@
 use crate::appearance::{Appearance, MaterialKey, MaterialObject, TextureKey, TextureObject};
-use crate::city_object::CityObject;
+use crate::city_object::{CityObject, CityObjectType};
 use crate::error::{CjseqError, Result};
 use crate::geometry::GeometryTemplates;
 use crate::index::{Index, MaterialIndex, TextureIndex, UvIndex, VertexIndex};
@@ -182,12 +182,22 @@ impl CityJSON {
         }
     }
 
-    /// The ids of the top-level City Objects, in `order`.
+    /// Whether City Object `co` roots a feature: it has no parents, or only
+    /// CityObjectGroups as parents (a group's members are not its parts).
+    fn is_root(&self, co: &CityObject) -> bool {
+        co.parents.iter().flatten().all(|p| {
+            self.city_objects
+                .get(p)
+                .is_some_and(|pco| pco.thetype == CityObjectType::CityObjectGroup)
+        })
+    }
+
+    /// The ids of the City Objects that root a feature, in `order`.
     fn feature_ids(&self, order: SortingStrategy) -> Vec<&String> {
         let mut ids: Vec<&String> = self
             .city_objects
             .iter()
-            .filter(|(_, co)| co.is_toplevel())
+            .filter(|(_, co)| self.is_root(co))
             .map(|(id, _)| id)
             .collect();
         match order {
@@ -201,39 +211,71 @@ impl CityJSON {
         ids
     }
 
-    /// The document's features, one per top-level City Object, in `order`;
-    /// see [`CityJSON::feature`].
+    /// The document's features, one per City Object that roots one, in
+    /// `order`; see [`CityJSON::feature`].
+    ///
+    /// Every City Object must land in a feature. If one cannot, because its
+    /// parent is missing or does not list it as a child, the only item is a
+    /// [`CjseqError::NotInAnyFeature`] naming them all, so nothing is
+    /// written partially.
     pub fn features(
         &self,
         order: SortingStrategy,
-    ) -> impl Iterator<Item = Result<CityJSONFeature>> + '_ {
-        self.feature_ids(order)
+    ) -> Box<dyn Iterator<Item = Result<CityJSONFeature>> + '_> {
+        let plan: Result<Vec<Vec<(&String, &CityObject)>>> = self
+            .feature_ids(order)
             .into_iter()
-            .map(move |id| self.slice(id, &self.city_objects[id]))
+            .map(|id| self.members(id, &self.city_objects[id]))
+            .collect();
+        let plan = match plan {
+            Ok(p) => p,
+            Err(e) => return Box::new(std::iter::once(Err(e))),
+        };
+        let covered: HashSet<&str> = plan.iter().flatten().map(|(id, _)| id.as_str()).collect();
+        let missing: Vec<String> = self
+            .city_objects
+            .keys()
+            .filter(|id| !covered.contains(id.as_str()))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            return Box::new(std::iter::once(Err(CjseqError::NotInAnyFeature {
+                ids: missing,
+            })));
+        }
+        Box::new(plan.into_iter().map(move |m| self.slice(m)))
     }
 
     /// The feature rooted at City Object `id`: it with all of its
     /// descendants, and only the vertices and appearance entries they use,
-    /// renumbered. `Ok(None)` if there is no such City Object.
+    /// renumbered. A CityObjectGroup's feature holds just the group.
+    /// `Ok(None)` if there is no such City Object.
     ///
     /// A child id that names no City Object, or an index past the end of
     /// `vertices` or of an appearance palette, is an error.
     pub fn feature(&self, id: &str) -> Result<Option<CityJSONFeature>> {
         match self.city_objects.get_key_value(id) {
-            Some((id, root)) => self.slice(id, root).map(Some),
+            Some((id, root)) => self.slice(self.members(id, root)?).map(Some),
             None => Ok(None),
         }
     }
 
-    fn slice(&self, id: &String, root: &CityObject) -> Result<CityJSONFeature> {
-        //-- the root, then every descendant breadth-first; `seen` stops a
-        //-- parent/child cycle from looping
+    /// The root, then every descendant breadth-first. A group's members
+    /// are not followed; `seen` stops a parent/child cycle from looping.
+    fn members<'a>(
+        &'a self,
+        id: &'a String,
+        root: &'a CityObject,
+    ) -> Result<Vec<(&'a String, &'a CityObject)>> {
         let mut members: Vec<(&String, &CityObject)> = vec![(id, root)];
         let mut seen: HashSet<&str> = HashSet::from([id.as_str()]);
         let mut next = 0;
         while next < members.len() {
             let (parent_id, parent) = members[next];
             next += 1;
+            if parent.thetype == CityObjectType::CityObjectGroup {
+                continue;
+            }
             for child_id in parent.children.iter().flatten() {
                 if !seen.insert(child_id.as_str()) {
                     continue;
@@ -247,7 +289,11 @@ impl CityJSON {
                 members.push((child_id, child));
             }
         }
+        Ok(members)
+    }
 
+    fn slice(&self, members: Vec<(&String, &CityObject)>) -> Result<CityJSONFeature> {
+        let id = members[0].0;
         let mut cjf = CityJSONFeature::new();
         cjf.id = id.clone();
         let mut g_vi_oldnew: HashMap<VertexIndex, VertexIndex> = HashMap::new();
@@ -348,7 +394,7 @@ impl CityJSON {
     pub fn number_of_city_objects(&self) -> usize {
         self.city_objects
             .values()
-            .filter(|co| co.is_toplevel())
+            .filter(|co| self.is_root(co))
             .count()
     }
 }
