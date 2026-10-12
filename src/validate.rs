@@ -389,8 +389,18 @@ fn city_objects(cos: &IndexMap<String, CityObject>, l: &Lengths, errs: &mut Vec<
     for (id, co) in cos {
         let mut inner = Vec::new();
         city_object_type(&co.thetype, &mut inner);
-        for g in co.geometry.iter().flatten() {
+        for g in co.geometries() {
             geometry(g, l, &mut inner);
+        }
+        for a in co.address.iter().flatten() {
+            if let Some(g) = &a.location {
+                if g.geometry_type() != crate::GeometryType::MultiPoint {
+                    inner.push(CjseqError::Validation(format!(
+                        "an address location is a MultiPoint, not a {:?}",
+                        g.geometry_type()
+                    )));
+                }
+            }
         }
         errs.extend(inner.into_iter().map(|e| CjseqError::InCityObject {
             id: id.clone(),

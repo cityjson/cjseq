@@ -552,3 +552,51 @@ fn the_noise_extension_example_is_valid_with_a_warning_per_segment() {
     assert_eq!(w.len(), 2, "{w:?}");
     assert!(w.iter().all(|e| matches!(e, CjseqError::ExtensionChildOfCoreObject { parent, .. } if parent == "a_noisy_bench")));
 }
+
+/// An address's `location` is a MultiPoint into `vertices` (§ 2.3): its
+/// indices are checked like any geometry's, and slicing renumbers them.
+#[test]
+fn an_address_location_is_a_geometry_like_any_other() {
+    let with_location = |boundaries: Value| {
+        doc(
+            json!({"b": {"type": "Building", "address": [{"country": "NL",
+                "location": {"type": "MultiPoint", "lod": "1", "boundaries": boundaries}}]}}),
+            json!(V4),
+            json!({}),
+        )
+    };
+    with_location(json!([3])).validate().unwrap();
+    let e = inner(first_error(&with_location(json!([4]))), "b");
+    assert!(
+        matches!(
+            e,
+            CjseqError::IndexOutOfRange {
+                kind: IndexKind::Vertex,
+                index: 4,
+                len: 4
+            }
+        ),
+        "{e:?}"
+    );
+
+    let cj = with_location(json!([3]));
+    let f = cj.feature("b").unwrap().unwrap();
+    f.validate().unwrap();
+    assert_eq!(f.vertices, vec![V4[3]]);
+    let loc = &f.city_objects["b"].address.as_ref().unwrap()[0];
+    assert_eq!(loc.other["country"], json!("NL"));
+    assert_eq!(
+        serde_json::to_value(&loc.location).unwrap()["boundaries"],
+        json!([0])
+    );
+
+    //-- a location is a MultiPoint, nothing else
+    let bad = doc(
+        json!({"b": {"type": "Building", "address": [{"location":
+            {"type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 2]]]}}]}}),
+        json!(V4),
+        json!({}),
+    );
+    let e = inner(first_error(&bad), "b");
+    assert!(e.to_string().contains("MultiPoint"), "{e}");
+}

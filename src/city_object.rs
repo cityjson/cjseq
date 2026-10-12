@@ -162,6 +162,17 @@ impl CityObjectType {
     pub const WaterBody: CityObjectType = CityObjectType::Known(KnownCityObjectType::WaterBody);
 }
 
+/// One address of a City Object (§ 2.3). Its members are free-form, except
+/// `location`, a MultiPoint into the document's `vertices`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct CityObjectAddress {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<Geometry>,
+    /// Every other member, kept verbatim.
+    #[serde(flatten)]
+    pub other: Map<String, Value>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CityObject {
     #[serde(rename = "type")]
@@ -171,6 +182,10 @@ pub struct CityObject {
     pub geographical_extent: Option<GeographicalExtent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attributes: Option<Map<String, Value>>,
+    /// The addresses of a Building, BuildingPart, BuildingUnit, Bridge or
+    /// BridgePart (§ 2.2, § 2.3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<Vec<CityObjectAddress>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geometry: Option<Vec<Geometry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -194,6 +209,7 @@ impl CityObject {
             thetype,
             geographical_extent: None,
             attributes: None,
+            address: None,
             geometry: None,
             children: None,
             children_roles: None,
@@ -205,6 +221,27 @@ impl CityObject {
     pub fn get_type(&self) -> CityObjectType {
         self.thetype.clone()
     }
+    /// Every geometry of the City Object that indexes `vertices`: its
+    /// `geometry`, then each address's `location`.
+    pub fn geometries(&self) -> impl Iterator<Item = &Geometry> {
+        let locations = self
+            .address
+            .iter()
+            .flatten()
+            .filter_map(|a| a.location.as_ref());
+        self.geometry.iter().flatten().chain(locations)
+    }
+
+    /// As [`CityObject::geometries`], mutably.
+    pub fn geometries_mut(&mut self) -> impl Iterator<Item = &mut Geometry> {
+        let locations = self
+            .address
+            .iter_mut()
+            .flatten()
+            .filter_map(|a| a.location.as_mut());
+        self.geometry.iter_mut().flatten().chain(locations)
+    }
+
     pub(crate) fn is_toplevel(&self) -> bool {
         match &self.parents {
             Some(x) => x.is_empty(),

@@ -247,7 +247,7 @@ impl CityJSON {
         let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
         for (key, co) in members {
             let mut co2 = co.clone();
-            for g in co2.geometry.iter_mut().flatten() {
+            for g in co2.geometries_mut() {
                 g.update_geometry_boundaries(&mut g_vi_oldnew);
                 g.update_material(&mut m_oldnew);
                 g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
@@ -274,7 +274,7 @@ impl CityJSON {
             newids.insert(VertexIndex(i), VertexIndex(new));
         }
         for co in self.city_objects.values_mut() {
-            for g in co.geometry.iter_mut().flatten() {
+            for g in co.geometries_mut() {
                 g.update_geometry_boundaries(&mut newids);
             }
         }
@@ -454,7 +454,7 @@ impl Collector {
             }
         }
         for (key, mut co) in cjf.city_objects {
-            for g in co.geometry.iter_mut().flatten() {
+            for g in co.geometries_mut() {
                 g.offset_geometry_boundaries(g_offset);
                 g.update_material(&mut m_oldnew);
                 g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
