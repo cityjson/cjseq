@@ -1,7 +1,7 @@
 use crate::appearance::{Appearance, MaterialKey, MaterialObject, TextureKey, TextureObject};
 use crate::city_object::{CityObject, CityObjectType};
-use crate::error::{CjseqError, Result};
-use crate::geometry::GeometryTemplates;
+use crate::error::{CjseqError, IndexKind, Result};
+use crate::geometry::{Geometry, GeometryTemplates};
 use crate::index::{Index, MaterialIndex, TextureIndex, UvIndex, VertexIndex};
 use crate::metadata::{Metadata, Transform};
 use indexmap::IndexMap;
@@ -597,6 +597,52 @@ impl Collector {
         Ok(())
     }
 
+    /// Every index in `cjf` must point into its own vertices and palettes,
+    /// or into the current sequence's templates: once merged, an index past
+    /// the end would silently point at another feature's data.
+    fn check_indices(&self, cjf: &mut CityJSONFeature) -> Result<()> {
+        let len = |v: Option<usize>| v.unwrap_or(0);
+        let app = cjf.appearance.as_ref();
+        let materials = len(app.and_then(|a| a.materials.as_ref()).map(Vec::len));
+        let textures = len(app.and_then(|a| a.textures.as_ref()).map(Vec::len));
+        let uvs = len(app.and_then(|a| a.vertices_texture.as_ref()).map(Vec::len));
+        let templates = self
+            .doc
+            .geometry_templates
+            .as_ref()
+            .map_or(0, |t| t.templates.len())
+            - self.template_offset;
+        let vertices = cjf.vertices.len();
+        for (id, co) in &mut cjf.city_objects {
+            let mut err: Option<CjseqError> = None;
+            let mut check = |kind: IndexKind, index: usize, len: usize| {
+                if index >= len && err.is_none() {
+                    err = Some(CjseqError::IndexOutOfRange { kind, index, len });
+                }
+            };
+            for g in co.geometries_mut() {
+                g.visit_vertices(&mut |v| check(IndexKind::Vertex, v.0, vertices));
+                g.for_each_material(&mut |m| check(IndexKind::Material, m.0, materials));
+                g.for_each_texture(&mut |t: &mut TextureIndex| {
+                    check(IndexKind::Texture, t.0, textures)
+                });
+                g.for_each_texture(&mut |uv: &mut UvIndex| {
+                    check(IndexKind::TextureVertex, uv.0, uvs)
+                });
+                if let Geometry::GeometryInstance { template, .. } = g {
+                    check(IndexKind::Template, template.0, templates);
+                }
+            }
+            if let Some(e) = err {
+                return Err(CjseqError::InCityObject {
+                    id: id.clone(),
+                    source: Box::new(e),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Add one feature: its City Objects, its vertices (re-expressed if a
     /// later header changed the transform) and its appearance, merged into
     /// the document's palettes. Root members the feature schema allows but
@@ -608,6 +654,7 @@ impl Collector {
                 to: cjf.id,
             });
         }
+        self.check_indices(&mut cjf)?;
         for member in cjf.other.keys() {
             self.warnings.push(CjseqError::DroppedMember {
                 feature: cjf.id.clone(),

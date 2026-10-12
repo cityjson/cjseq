@@ -422,3 +422,77 @@ fn collecting_sequences_with_conflicting_headers_is_an_error() {
     h.version = cjseq::CityJSONVersion::V1_1;
     assert!(c.add_header(h).is_err());
 }
+
+/// An index past the end of a feature's own vertices or palettes must not
+/// come out of collect as a valid-looking index into somebody else's.
+#[test]
+fn collecting_rejects_a_feature_whose_indices_point_past_its_own_data() {
+    let header = || {
+        seq_header(
+            json!({"templates": [{"type": "MultiPoint", "lod": "1", "boundaries": [0]}], "vertices-templates": [[0.0, 0.0, 0.0]]}),
+            json!([]),
+            json!({}),
+            "x",
+        )
+    };
+    let feature = |geometry: serde_json::Value| {
+        CityJSONFeature::from_str(
+            &json!({"type": "CityJSONFeature", "id": "a",
+                "CityObjects": {"a": {"type": "Building", "geometry": [geometry]}},
+                "vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+                "appearance": {"materials": [{"name": "m"}], "textures": [{"image": "a.png"}],
+                    "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]}})
+            .to_string(),
+        )
+        .unwrap()
+    };
+    let ms = |extra: serde_json::Value| {
+        let mut g = json!({"type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 2]]]});
+        g.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        g
+    };
+    let tm =
+        json!([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
+    for (what, g, kind) in [
+        (
+            "vertex",
+            json!({"type": "MultiSurface", "lod": "1", "boundaries": [[[0, 1, 9]]]}),
+            cjseq::IndexKind::Vertex,
+        ),
+        (
+            "material",
+            ms(json!({"material": {"m": {"value": 5}}})),
+            cjseq::IndexKind::Material,
+        ),
+        (
+            "texture",
+            ms(json!({"texture": {"t": {"values": [[[4, 0, 1, 2]]]}}})),
+            cjseq::IndexKind::Texture,
+        ),
+        (
+            "uv",
+            ms(json!({"texture": {"t": {"values": [[[0, 0, 1, 7]]]}}})),
+            cjseq::IndexKind::TextureVertex,
+        ),
+        (
+            "template",
+            json!({"type": "GeometryInstance", "template": 3, "boundaries": [0], "transformationMatrix": tm}),
+            cjseq::IndexKind::Template,
+        ),
+    ] {
+        let mut c = Collector::new(header());
+        let e = c.add(feature(g)).expect_err(what);
+        match e {
+            CjseqError::InCityObject { id, source } => {
+                assert_eq!(id, "a");
+                assert!(
+                    matches!(*source, CjseqError::IndexOutOfRange { kind: k, .. } if k == kind),
+                    "{what}: {source:?}"
+                );
+            }
+            other => panic!("{what}: {other:?}"),
+        }
+    }
+}
