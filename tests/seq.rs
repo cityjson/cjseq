@@ -290,3 +290,135 @@ fn default_themes_travel_with_the_header_and_are_reconciled() {
     assert_eq!(app.default_theme_material.as_deref(), Some("visual"));
     assert_eq!(app.default_theme_texture.as_deref(), Some("winter"));
 }
+
+fn seq_header(
+    templates: serde_json::Value,
+    materials: serde_json::Value,
+    ext: serde_json::Value,
+    title: &str,
+) -> CityJSON {
+    CityJSON::from_str(
+        &json!({"type": "CityJSON", "version": "2.0",
+            "transform": {"scale": [1.0, 1.0, 1.0], "translate": [0.0, 0.0, 0.0]},
+            "metadata": {"title": title},
+            "extensions": ext,
+            "CityObjects": {}, "vertices": [],
+            "appearance": {"materials": materials},
+            "geometry-templates": templates})
+        .to_string(),
+    )
+    .unwrap()
+}
+
+fn instance(id: &str, template: usize) -> CityJSONFeature {
+    CityJSONFeature::from_str(
+        &json!({"type": "CityJSONFeature", "id": id,
+            "CityObjects": {id: {"type": "SolitaryVegetationObject", "geometry": [{
+                "type": "GeometryInstance", "template": template, "boundaries": [0],
+                "transformationMatrix": [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0]}]}},
+            "vertices": [[0, 0, 0]]})
+        .to_string(),
+    )
+    .unwrap()
+}
+
+/// Each sequence's header carries its own geometry templates, their
+/// appearance and its extensions; collecting several sequences merges them
+/// so every GeometryInstance still means what it meant in its sequence.
+#[test]
+fn collecting_several_sequences_merges_their_headers() {
+    let template = |v: [usize; 3], m: usize| json!({"type": "MultiSurface", "lod": "1", "boundaries": [[v]], "material": {"visual": {"value": m}}});
+    let noise = json!({"Noise": {"url": "https://x.org/noise.json", "version": "1.0"}});
+    let h1 = seq_header(
+        json!({"templates": [template([0, 1, 2], 0)], "vertices-templates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]}),
+        json!([{"name": "red"}]),
+        noise.clone(),
+        "one",
+    );
+    let h2 = seq_header(
+        json!({"templates": [template([0, 1, 2], 0), template([2, 1, 0], 1)],
+               "vertices-templates": [[5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [5.0, 6.0, 0.0]]}),
+        json!([{"name": "green"}, {"name": "red"}]),
+        json!({"Solar": {"url": "https://x.org/solar.json", "version": "0.8"}}),
+        "two",
+    );
+    let mut c = Collector::new(h1);
+    c.add(instance("a", 0)).unwrap();
+    c.add_header(h2).unwrap();
+    c.add(instance("b", 0)).unwrap();
+    c.add(instance("c", 1)).unwrap();
+    assert_eq!(
+        c.warnings().len(),
+        1,
+        "metadata differs: {:?}",
+        c.warnings()
+    );
+    let doc = c.finish();
+    doc.validate().unwrap();
+
+    let v = serde_json::to_value(&doc).unwrap();
+    let gt = &v["geometry-templates"];
+    let resolve = |id: &str| {
+        let t = v["CityObjects"][id]["geometry"][0]["template"]
+            .as_u64()
+            .unwrap() as usize;
+        let tpl = &gt["templates"][t];
+        let pts: Vec<_> = tpl["boundaries"][0][0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| gt["vertices-templates"][i.as_u64().unwrap() as usize].clone())
+            .collect();
+        let m = tpl["material"]["visual"]["value"].as_u64().unwrap() as usize;
+        (pts, v["appearance"]["materials"][m]["name"].clone())
+    };
+    assert_eq!(
+        resolve("a"),
+        (
+            vec![
+                json!([0.0, 0.0, 0.0]),
+                json!([1.0, 0.0, 0.0]),
+                json!([0.0, 1.0, 0.0])
+            ],
+            json!("red")
+        )
+    );
+    assert_eq!(
+        resolve("b"),
+        (
+            vec![
+                json!([5.0, 0.0, 0.0]),
+                json!([6.0, 0.0, 0.0]),
+                json!([5.0, 6.0, 0.0])
+            ],
+            json!("green")
+        )
+    );
+    assert_eq!(
+        resolve("c"),
+        (
+            vec![
+                json!([5.0, 6.0, 0.0]),
+                json!([6.0, 0.0, 0.0]),
+                json!([5.0, 0.0, 0.0])
+            ],
+            json!("red")
+        )
+    );
+    let ext = doc.extensions.as_ref().unwrap();
+    assert!(ext.contains_key("Noise") && ext.contains_key("Solar"));
+    assert_eq!(doc.metadata.unwrap().title.as_deref(), Some("one"));
+}
+
+#[test]
+fn collecting_sequences_with_conflicting_headers_is_an_error() {
+    let ext = |v: &str| json!({"Noise": {"url": "https://x.org/noise.json", "version": v}});
+    let empty = json!({"templates": [], "vertices-templates": []});
+    let mut c = Collector::new(seq_header(empty.clone(), json!([]), ext("1.0"), "x"));
+    assert!(c
+        .add_header(seq_header(empty.clone(), json!([]), ext("2.0"), "x"))
+        .is_err());
+    let mut h = seq_header(empty, json!([]), ext("1.0"), "x");
+    h.version = cjseq::CityJSONVersion::V1_1;
+    assert!(c.add_header(h).is_err());
+}

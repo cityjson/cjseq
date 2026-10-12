@@ -356,6 +356,14 @@ impl Geometry {
         self.for_each_vertex(&mut |vi| *vi = remap(violdnew, *vi));
     }
 
+    /// Shift a GeometryInstance's template index; other geometries have
+    /// none.
+    pub(crate) fn offset_template(&mut self, offset: usize) {
+        if let Geometry::GeometryInstance { template, .. } = self {
+            template.0 += offset;
+        }
+    }
+
     pub(crate) fn offset_geometry_boundaries(&mut self, offset: usize) {
         self.for_each_vertex(&mut |vi| vi.0 += offset);
     }

@@ -419,11 +419,22 @@ pub struct Collector {
     /// The transform the features being added are expressed in, when it is
     /// not the document's.
     correction: Option<Transform>,
+    /// Where the current sequence's geometry templates start in the
+    /// document's.
+    template_offset: usize,
     /// Where each distinct material and texture already is in the
     /// document's palettes.
     materials: HashMap<MaterialKey, usize>,
     textures: HashMap<TextureKey, usize>,
     warnings: Vec<CjseqError>,
+}
+
+/// How one source's appearance indices map onto the document's palettes.
+#[derive(Default)]
+struct PaletteMaps {
+    materials: HashMap<MaterialIndex, MaterialIndex>,
+    textures: HashMap<TextureIndex, TextureIndex>,
+    uvs: HashMap<UvIndex, UvIndex>,
 }
 
 impl Collector {
@@ -444,15 +455,144 @@ impl Collector {
         Collector {
             doc: header,
             correction: None,
+            template_offset: 0,
             materials,
             textures,
             warnings: Vec::new(),
         }
     }
 
-    /// The header of a further sequence: the features added after it are in
-    /// its transform.
-    pub fn add_header(&mut self, header: CityJSON) -> Result<()> {
+    /// Merge `app` into the document's appearance: identical materials and
+    /// textures become one entry, texture vertices are appended, and the
+    /// default themes are adopted when the document has none. A default
+    /// theme that disagrees with the document's is dropped, with a warning
+    /// made by `dropped`.
+    fn merge_appearance(
+        &mut self,
+        app: Appearance,
+        dropped: &dyn Fn(String) -> CjseqError,
+    ) -> PaletteMaps {
+        let mut maps = PaletteMaps::default();
+        let doc_app = self.doc.appearance.get_or_insert_with(Appearance::new);
+        for (name, mine, theirs) in [
+            (
+                "appearance.default-theme-material",
+                &mut doc_app.default_theme_material,
+                app.default_theme_material,
+            ),
+            (
+                "appearance.default-theme-texture",
+                &mut doc_app.default_theme_texture,
+                app.default_theme_texture,
+            ),
+        ] {
+            match (mine.as_ref(), theirs) {
+                (None, Some(t)) => *mine = Some(t),
+                (Some(m), Some(t)) if *m != t => {
+                    self.warnings.push(dropped(format!("{name} {t:?}")))
+                }
+                _ => {}
+            }
+        }
+        for (i, m) in app.materials.into_iter().flatten().enumerate() {
+            let all = doc_app.materials.get_or_insert_with(Vec::new);
+            let at = *self.materials.entry(m.key()).or_insert_with(|| {
+                all.push(m);
+                all.len() - 1
+            });
+            maps.materials.insert(MaterialIndex(i), MaterialIndex(at));
+        }
+        for (i, t) in app.textures.into_iter().flatten().enumerate() {
+            let all = doc_app.textures.get_or_insert_with(Vec::new);
+            let at = *self.textures.entry(t.key()).or_insert_with(|| {
+                all.push(t);
+                all.len() - 1
+            });
+            maps.textures.insert(TextureIndex(i), TextureIndex(at));
+        }
+        if let Some(uvs) = app.vertices_texture {
+            //-- appended verbatim, so each new index is the old one shifted by
+            //-- however many were already collected
+            let offset = doc_app.vertices_texture.as_ref().map_or(0, Vec::len);
+            for i in 0..uvs.len() {
+                maps.uvs.insert(UvIndex(i), UvIndex(offset + i));
+            }
+            doc_app.add_vertices_texture(uvs);
+        }
+        maps
+    }
+
+    /// The header of a further sequence, whose features follow. Its
+    /// transform applies to them, so their vertices are re-expressed in the
+    /// document's; its geometry templates are appended to the document's
+    /// (with their appearance merged into the document's palettes), so its
+    /// features' GeometryInstances keep pointing at the right ones; its
+    /// extensions are added.
+    ///
+    /// A different CityJSON version, or an extension of the same name with
+    /// a different URL or version, is an error. Metadata or other root
+    /// members that differ from the document's are dropped, with a warning.
+    pub fn add_header(&mut self, mut header: CityJSON) -> Result<()> {
+        if header.version != self.doc.version {
+            return Err(CjseqError::HeaderMismatch {
+                member: format!("version {} vs {}", header.version, self.doc.version),
+            });
+        }
+        for (name, ext) in header.extensions.take().into_iter().flatten() {
+            let mine = self.doc.extensions.get_or_insert_with(IndexMap::new);
+            match mine.get(&name) {
+                Some(e) if *e != ext => {
+                    return Err(CjseqError::HeaderMismatch {
+                        member: format!("extensions.{name}"),
+                    })
+                }
+                Some(_) => {}
+                None => {
+                    mine.insert(name, ext);
+                }
+            }
+        }
+        let header_dropped = |member: String| CjseqError::DroppedHeaderMember { member };
+        if header.metadata.is_some() && header.metadata != self.doc.metadata {
+            self.warnings.push(header_dropped("metadata".to_string()));
+        }
+        for (k, v) in std::mem::take(&mut header.other) {
+            match self.doc.other.get(&k) {
+                None => {
+                    self.doc.other.insert(k, v);
+                }
+                Some(mine) if *mine != v => self.warnings.push(header_dropped(k)),
+                Some(_) => {}
+            }
+        }
+        let maps = match header.appearance.take() {
+            Some(app) => self.merge_appearance(app, &header_dropped),
+            None => PaletteMaps::default(),
+        };
+        let doc_templates = self
+            .doc
+            .geometry_templates
+            .get_or_insert_with(|| GeometryTemplates {
+                templates: Vec::new(),
+                vertices_templates: Vec::new(),
+            });
+        self.template_offset = doc_templates.templates.len();
+        if let Some(gt) = header.geometry_templates.take() {
+            let v_offset = doc_templates.vertices_templates.len();
+            let mut maps = maps;
+            for mut g in gt.templates {
+                g.offset_geometry_boundaries(v_offset);
+                g.update_material(&mut maps.materials);
+                g.update_texture(&mut maps.textures, &mut maps.uvs);
+                doc_templates.templates.push(g);
+            }
+            doc_templates
+                .vertices_templates
+                .extend(gt.vertices_templates);
+        }
+        if doc_templates.templates.is_empty() {
+            self.doc.geometry_templates = None;
+        }
         self.correction = (header.transform != self.doc.transform).then_some(header.transform);
         Ok(())
     }
@@ -474,70 +614,22 @@ impl Collector {
                 member: member.clone(),
             });
         }
+        let id = cjf.id.clone();
+        let mut maps = match cjf.appearance.take() {
+            Some(app) => self.merge_appearance(app, &|member| CjseqError::DroppedMember {
+                feature: id.clone(),
+                member,
+            }),
+            None => PaletteMaps::default(),
+        };
         let doc = &mut self.doc;
-        let mut m_oldnew: HashMap<MaterialIndex, MaterialIndex> = HashMap::new();
-        let mut t_oldnew: HashMap<TextureIndex, TextureIndex> = HashMap::new();
-        let mut t_v_oldnew: HashMap<UvIndex, UvIndex> = HashMap::new();
         let g_offset = doc.vertices.len();
-        if let Some(cjf_app) = cjf.appearance.take() {
-            let app = doc.appearance.get_or_insert_with(Appearance::new);
-            //-- a feature's default themes are the document's: adopt them if
-            //-- the document has none, and say so if they disagree
-            for (name, mine, theirs) in [
-                (
-                    "appearance.default-theme-material",
-                    &mut app.default_theme_material,
-                    cjf_app.default_theme_material,
-                ),
-                (
-                    "appearance.default-theme-texture",
-                    &mut app.default_theme_texture,
-                    cjf_app.default_theme_texture,
-                ),
-            ] {
-                match (mine.as_ref(), theirs) {
-                    (None, Some(t)) => *mine = Some(t),
-                    (Some(m), Some(t)) if *m != t => {
-                        self.warnings.push(CjseqError::DroppedMember {
-                            feature: cjf.id.clone(),
-                            member: format!("{name} {t:?}"),
-                        })
-                    }
-                    _ => {}
-                }
-            }
-            for (i, m) in cjf_app.materials.into_iter().flatten().enumerate() {
-                let all = app.materials.get_or_insert_with(Vec::new);
-                let at = *self.materials.entry(m.key()).or_insert_with(|| {
-                    all.push(m);
-                    all.len() - 1
-                });
-                m_oldnew.insert(MaterialIndex(i), MaterialIndex(at));
-            }
-            for (i, t) in cjf_app.textures.into_iter().flatten().enumerate() {
-                let all = app.textures.get_or_insert_with(Vec::new);
-                let at = *self.textures.entry(t.key()).or_insert_with(|| {
-                    all.push(t);
-                    all.len() - 1
-                });
-                t_oldnew.insert(TextureIndex(i), TextureIndex(at));
-            }
-            if let Some(uvs) = cjf_app.vertices_texture {
-                //-- the feature's texture vertices are appended verbatim, so
-                //-- each one's new index is its old one shifted by however
-                //-- many were already collected
-                let t_v_offset = app.vertices_texture.as_ref().map_or(0, Vec::len);
-                for i in 0..uvs.len() {
-                    t_v_oldnew.insert(UvIndex(i), UvIndex(t_v_offset + i));
-                }
-                app.add_vertices_texture(uvs);
-            }
-        }
         for (key, mut co) in cjf.city_objects {
             for g in co.geometries_mut() {
                 g.offset_geometry_boundaries(g_offset);
-                g.update_material(&mut m_oldnew);
-                g.update_texture(&mut t_oldnew, &mut t_v_oldnew);
+                g.offset_template(self.template_offset);
+                g.update_material(&mut maps.materials);
+                g.update_texture(&mut maps.textures, &mut maps.uvs);
             }
             doc.city_objects.insert(key, co);
         }

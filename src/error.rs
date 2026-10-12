@@ -51,6 +51,13 @@ pub enum CjseqError {
     /// City Objects that no feature reaches: their parent is missing, or
     /// does not list them as children.
     NotInAnyFeature { ids: Vec<String> },
+    /// Two CityJSONSeq headers being collected into one document disagree
+    /// on something that cannot be merged.
+    HeaderMismatch { member: String },
+    /// Collecting dropped a member of a later sequence's header that
+    /// differed from the document's. Reported by
+    /// [`crate::Collector::warnings`].
+    DroppedHeaderMember { member: String },
     /// A name or version does not match the pattern the schema gives it.
     Pattern {
         /// What the value is, eg `"Extension City Object type"`.
@@ -134,6 +141,14 @@ impl fmt::Display for CjseqError {
                 "City Objects in no feature (a parent is missing or does not list them as children): {}",
                 ids.join(", ")
             ),
+            CjseqError::HeaderMismatch { member } => write!(
+                f,
+                "the sequences being collected disagree on {member}"
+            ),
+            CjseqError::DroppedHeaderMember { member } => write!(
+                f,
+                "dropped {member:?} of a later sequence's header, which differs from the first"
+            ),
             CjseqError::Pattern {
                 what,
                 value,
@@ -173,6 +188,8 @@ impl std::error::Error for CjseqError {
             | CjseqError::ExtensionChildOfCoreObject { .. }
             | CjseqError::DroppedMember { .. }
             | CjseqError::NotInAnyFeature { .. }
+            | CjseqError::HeaderMismatch { .. }
+            | CjseqError::DroppedHeaderMember { .. }
             | CjseqError::IndexOutOfRange { .. } => None,
         }
     }
