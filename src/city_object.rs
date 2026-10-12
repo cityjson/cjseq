@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 /// The 1st- and 2nd-level City Object types the spec defines (§ 2), each
 /// serialized as its name.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum KnownCityObjectType {
     Bridge,
     BridgePart,

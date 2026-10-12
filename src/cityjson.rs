@@ -61,6 +61,7 @@ fn slice_appearance(
 
 /// The order in which [`CityJSON::features`] hands out features.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SortingStrategy {
     /// The order the top-level City Objects appear in the document.
     AsIs,
@@ -794,6 +795,7 @@ pub fn cjseq_to_cj(header: CityJSON, features: Vec<CityJSONFeature>) -> Result<C
 
 /// The CityJSON versions this crate reads and writes.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum CityJSONVersion {
     #[serde(rename = "1.1")]
     V1_1,

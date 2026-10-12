@@ -55,6 +55,21 @@ pub mod wasm;
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 pub use wasm::*;
 
+/// The public enums are `#[non_exhaustive]`, so new CityJSON versions,
+/// geometry types or error variants are not breaking changes: a match
+/// outside the crate needs a `_` arm.
+///
+/// ```compile_fail
+/// fn name(v: cjseq::CityJSONVersion) -> &'static str {
+///     match v {
+///         cjseq::CityJSONVersion::V1_1 => "1.1",
+///         cjseq::CityJSONVersion::V2_0 => "2.0",
+///     }
+/// }
+/// ```
+#[cfg(doctest)]
+pub struct NonExhaustiveDoctests;
+
 /// The README's examples, compiled and run as doctests.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]

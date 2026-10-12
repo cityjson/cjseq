@@ -3,6 +3,7 @@ use std::fmt;
 
 /// The crate's error type.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum CjseqError {
     /// A value was not the JSON the type expected, and nothing more specific
     /// could be said about why.
@@ -95,6 +96,7 @@ pub enum CjseqError {
 
 /// What an out-of-range index was indexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum IndexKind {
     Vertex,
     TextureVertex,

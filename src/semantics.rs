@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 /// The semantic surface types the spec defines (§ 3.3), each serialized as
 /// its name.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum KnownSemanticSurfaceType {
     RoofSurface,
     GroundSurface,

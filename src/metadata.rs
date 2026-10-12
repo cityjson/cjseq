@@ -74,6 +74,7 @@ pub struct PointOfContact {
 /// `pointOfContact.contactType` (§ 5.3).
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum ContactType {
     Individual,
     Organization,
@@ -82,6 +83,7 @@ pub enum ContactType {
 /// `pointOfContact.role`, from the ISO 19115 role codelist (§ 5.3).
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ContactRole {
     ResourceProvider,
     Custodian,

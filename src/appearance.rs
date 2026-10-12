@@ -165,6 +165,7 @@ pub enum BorderColor {
 /// A texture image's format, `"PNG"` or `"JPG"` (upper case, unlike
 /// `wrapMode` and `textureType`).
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TextureFormat {
     PNG,
     JPG,
@@ -173,6 +174,7 @@ pub enum TextureFormat {
 /// How a texture repeats outside `[0, 1]`.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum WrapMode {
     None,
     Wrap,
@@ -184,6 +186,7 @@ pub enum WrapMode {
 /// What a texture depicts.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum TextureType {
     Unknown,
     Specific,

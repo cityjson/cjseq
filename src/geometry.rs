@@ -22,6 +22,7 @@ pub type Shell = Vec<Surface>;
 /// The tag of a [`Geometry`], for callers that need the kind without matching
 /// on the whole enum.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GeometryType {
     MultiPoint,
     MultiLineString,
@@ -143,6 +144,7 @@ fn nesting_depth(v: &Value) -> usize {
 /// MultiPoint or MultiLineString carries no material or texture.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[non_exhaustive]
 pub enum Geometry {
     MultiPoint {
         lod: Lod,
